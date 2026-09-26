@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# Data artefacts
+data/raw/
+data/processed/
+*.pt
+*.sqlite
+*.db
+
+# Experiment outputs
+results/
+runs/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
