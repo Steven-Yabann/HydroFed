@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hydrofed"
+version = "0.1.0"
+description = "Federated anomaly detection for hydropower-style telemetry"
+authors = [{ name = "Your Name" }]
+requires-python = ">=3.11"
+dependencies = [
+    "torch==2.2.2",
+    "flwr==1.8.0",
+    "numpy==1.26.4",
+    "pandas==2.2.2",
+    "scikit-learn==1.4.2",
+    "PyYAML==6.0.2",
+    "prometheus-client==0.20.0",
+    "requests==2.32.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.2.2",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
