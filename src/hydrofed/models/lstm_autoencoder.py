@@ -17,14 +17,15 @@ from torch import nn
 class LSTMAutoencoder(nn.Module):
     """Sequence-to-sequence autoencoder built with LSTM layers.
 
-    Input shape:
+    Expected input shape:
         (batch_size, window_length, n_features)
 
     Output shape:
         (batch_size, window_length, n_features)
 
-    The encoder compresses a telemetry window into a latent vector.
-    The decoder expands that latent vector back into a reconstructed window.
+    The encoder reads the full telemetry window and compresses it into one
+    latent vector. The decoder then repeats that latent vector across the
+    window length and tries to reconstruct the original sequence.
     """
 
     def __init__(
@@ -36,6 +37,15 @@ class LSTMAutoencoder(nn.Module):
         dropout: float = 0.1,
     ) -> None:
         super().__init__()
+
+        if n_features <= 0:
+            raise ValueError("n_features must be positive")
+        if hidden_size <= 0:
+            raise ValueError("hidden_size must be positive")
+        if latent_size <= 0:
+            raise ValueError("latent_size must be positive")
+        if num_layers <= 0:
+            raise ValueError("num_layers must be positive")
 
         self.n_features = n_features
         self.hidden_size = hidden_size
@@ -62,8 +72,25 @@ class LSTMAutoencoder(nn.Module):
 
         self.output_layer = nn.Linear(hidden_size, n_features)
 
+    def _validate_batch(self, batch: torch.Tensor) -> None:
+        """Check that the input tensor matches the model contract."""
+
+        if batch.ndim != 3:
+            raise ValueError(
+                "Expected batch with shape "
+                "(batch_size, window_length, n_features)"
+            )
+
+        if batch.shape[2] != self.n_features:
+            raise ValueError(
+                f"Expected {self.n_features} features, "
+                f"but received {batch.shape[2]}"
+            )
+
     def forward(self, batch: torch.Tensor) -> torch.Tensor:
         """Reconstruct a batch of telemetry windows."""
+
+        self._validate_batch(batch)
 
         _, (hidden, _) = self.encoder(batch)
 
@@ -91,8 +118,8 @@ class LSTMAutoencoder(nn.Module):
     def get_parameters_numpy(self) -> list[np.ndarray]:
         """Return model weights as NumPy arrays.
 
-        Flower sends model parameters between server and clients as arrays,
-        so this helper creates that bridge.
+        Flower exchanges model parameters as NumPy arrays, so this method
+        converts the PyTorch state dictionary into Flower-friendly values.
         """
 
         return [value.detach().cpu().numpy() for value in self.state_dict().values()]
@@ -100,14 +127,30 @@ class LSTMAutoencoder(nn.Module):
     def set_parameters_numpy(self, parameters: list[np.ndarray]) -> None:
         """Load model weights from NumPy arrays."""
 
-        state_dict = OrderedDict(
-            {
-                key: torch.tensor(value)
-                for key, value in zip(self.state_dict().keys(), parameters)
-            }
-        )
+        current_state = self.state_dict()
 
-        self.load_state_dict(state_dict, strict=True)
+        if len(parameters) != len(current_state):
+            raise ValueError(
+                f"Expected {len(current_state)} parameter arrays, "
+                f"but received {len(parameters)}"
+            )
+
+        new_state = OrderedDict()
+
+        for key, value in zip(current_state.keys(), parameters):
+            current_tensor = current_state[key]
+            new_state[key] = torch.as_tensor(
+                value,
+                dtype=current_tensor.dtype,
+                device=current_tensor.device,
+            )
+
+        self.load_state_dict(new_state, strict=True)
+
+    def count_trainable_parameters(self) -> int:
+        """Return the number of trainable parameters in the model."""
+
+        return sum(parameter.numel() for parameter in self.parameters() if parameter.requires_grad)
 
 
 def build_model(n_features: int, model_config: dict | None = None) -> LSTMAutoencoder:

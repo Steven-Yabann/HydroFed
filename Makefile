@@ -11,3 +11,6 @@ setup:
 
 test:
 	$(PYTHON) -m pytest tests/ -v
+
+model-demo:
+	$(PYTHON) scripts/inspect_model.py

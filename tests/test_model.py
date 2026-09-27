@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from hydrofed.models.lstm_autoencoder import LSTMAutoencoder, build_model
@@ -24,6 +25,24 @@ def test_reconstruction_errors_returns_one_error_per_window():
     assert torch.all(errors >= 0)
 
 
+def test_model_rejects_input_with_wrong_number_of_dimensions():
+    model = LSTMAutoencoder(n_features=8)
+
+    bad_batch = torch.randn(32, 8)
+
+    with pytest.raises(ValueError, match="Expected batch"):
+        model(bad_batch)
+
+
+def test_model_rejects_input_with_wrong_number_of_features():
+    model = LSTMAutoencoder(n_features=8)
+
+    bad_batch = torch.randn(4, 32, 6)
+
+    with pytest.raises(ValueError, match="Expected 8 features"):
+        model(bad_batch)
+
+
 def test_model_parameters_can_round_trip_through_numpy():
     model = LSTMAutoencoder(n_features=8)
 
@@ -34,6 +53,19 @@ def test_model_parameters_can_round_trip_through_numpy():
 
     for original, copied in zip(model.parameters(), new_model.parameters()):
         assert torch.allclose(original, copied)
+
+
+def test_setting_wrong_number_of_parameter_arrays_fails_clearly():
+    model = LSTMAutoencoder(n_features=8)
+
+    with pytest.raises(ValueError, match="Expected"):
+        model.set_parameters_numpy([])
+
+
+def test_count_trainable_parameters_is_positive():
+    model = LSTMAutoencoder(n_features=8)
+
+    assert model.count_trainable_parameters() > 0
 
 
 def test_build_model_uses_config_values():
