@@ -14,8 +14,11 @@ LABEL_NAMES = ("anomaly", "changepoint")
 SKAB_ARCHIVE_URL = "https://github.com/waico/SKAB/archive/refs/heads/master.zip"
 
 def download_skab(destination: str | Path, url: str = SKAB_ARCHIVE_URL) -> Path:
-    """Download and safely unpack the public SKAB repository archive."""
-    destination = Path(destination); destination.mkdir(parents=True, exist_ok=True)
+    """Download SKAB when ``destination`` does not already contain CSV files."""
+    destination = Path(destination)
+    if destination.exists() and any(destination.rglob("*.csv")):
+        return destination
+    destination.mkdir(parents=True, exist_ok=True)
     response = requests.get(url, timeout=60); response.raise_for_status()
     root = destination.resolve()
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
