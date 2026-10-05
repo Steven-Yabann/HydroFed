@@ -97,3 +97,30 @@ def train_epochs(
         final_epoch_loss = total_loss / total_examples
 
     return float(final_epoch_loss)
+
+
+def reconstruction_errors(
+    model: LSTMAutoencoder,
+    windows: np.ndarray,
+    batch_size: int = 256,
+    device: str = "cpu",
+) -> np.ndarray:
+    """Score windows without building an autograd graph."""
+    loader = DataLoader(PlantDataset(windows), batch_size=batch_size, shuffle=False)
+    model.to(device)
+    model.eval()
+    scores: list[np.ndarray] = []
+    with torch.no_grad():
+        for batch in loader:
+            scores.append(model.reconstruction_errors(batch.to(device)).cpu().numpy())
+    return np.concatenate(scores).astype(np.float64)
+
+
+def calibrate_threshold(errors: np.ndarray, percentile: float = 95.0) -> float:
+    """Choose a threshold from normal validation reconstruction errors."""
+    values = np.asarray(errors, dtype=float)
+    if values.size == 0 or not np.all(np.isfinite(values)):
+        raise ValueError("errors must contain finite values")
+    if not 0.0 < percentile <= 100.0:
+        raise ValueError("percentile must be in (0, 100]")
+    return float(np.percentile(values, percentile))
