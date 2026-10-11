@@ -1,0 +1,38 @@
+from flwr.common import parameters_to_ndarrays
+from flwr.server.strategy import FedAvg
+from hydrofed.monitoring import (ANOMALY_SCORE, COMMUNICATION_BYTES, F1,
+                                 GLOBAL_LOSS, LOCAL_LOSS, ROUND)
+from hydrofed.storage import ExperimentStore
+
+def parameter_bytes(parameters): return sum(array.nbytes for array in parameters_to_ndarrays(parameters))
+
+class TrackingFedAvg(FedAvg):
+    def __init__(self, db_path="artifacts/experiments.db", experiment="federated", **kwargs):
+        super().__init__(**kwargs); self.store = ExperimentStore(db_path); self.experiment = experiment
+    def aggregate_fit(self, server_round, results, failures):
+        uplink = sum(parameter_bytes(result.parameters) for _, result in results)
+        for _, result in results:
+            self.store.record(self.experiment, "client_round", dict(result.metrics) | {"uplink_bytes": parameter_bytes(result.parameters)}, str(result.metrics.get("client_id", "unknown")), server_round)
+            client_id = str(result.metrics.get("client_id", "unknown"))
+            if "local_loss" in result.metrics:
+                LOCAL_LOSS.labels(client_id).set(float(result.metrics["local_loss"]))
+        aggregated, metrics = super().aggregate_fit(server_round, results, failures)
+        downlink = parameter_bytes(aggregated) * len(results) if aggregated is not None else 0
+        ROUND.set(server_round)
+        COMMUNICATION_BYTES.labels("uplink").set(uplink)
+        COMMUNICATION_BYTES.labels("downlink").set(downlink)
+        self.store.record(self.experiment, "federation_round", {"uplink_bytes": uplink, "downlink_bytes": downlink, **(metrics or {})}, round_number=server_round)
+        return aggregated, metrics
+
+    def aggregate_evaluate(self, server_round, results, failures):
+        """Record evaluation values from Flower workers in server-visible gauges."""
+        loss, metrics = super().aggregate_evaluate(server_round, results, failures)
+        if loss is not None:
+            GLOBAL_LOSS.set(loss)
+        for _, result in results:
+            client_id = str(result.metrics.get("client_id", "unknown"))
+            if "local_loss" in result.metrics:
+                ANOMALY_SCORE.labels(client_id).set(float(result.metrics["local_loss"]))
+            if "f1" in result.metrics:
+                F1.set(float(result.metrics["f1"]))
+        return loss, metrics
