@@ -7,8 +7,20 @@ from hydrofed.storage import ExperimentStore
 def parameter_bytes(parameters): return sum(array.nbytes for array in parameters_to_ndarrays(parameters))
 
 class TrackingFedAvg(FedAvg):
-    def __init__(self, db_path="artifacts/experiments.db", experiment="federated", **kwargs):
-        super().__init__(**kwargs); self.store = ExperimentStore(db_path); self.experiment = experiment
+    def __init__(
+        self,
+        db_path="artifacts/experiments.db",
+        experiment="federated",
+        **kwargs,
+    ):
+        initial_parameters = kwargs.get("initial_parameters")
+
+        super().__init__(**kwargs)
+
+        self.store = ExperimentStore(db_path)
+        self.experiment = experiment
+        self.final_parameters = initial_parameters
+
     def aggregate_fit(self, server_round, results, failures):
         uplink = sum(parameter_bytes(result.parameters) for _, result in results)
         for _, result in results:
@@ -16,13 +28,27 @@ class TrackingFedAvg(FedAvg):
             client_id = str(result.metrics.get("client_id", "unknown"))
             if "local_loss" in result.metrics:
                 LOCAL_LOSS.labels(client_id).set(float(result.metrics["local_loss"]))
-        aggregated, metrics = super().aggregate_fit(server_round, results, failures)
+        aggregated, metrics = super().aggregate_fit(
+            server_round,
+            results,
+            failures
+        )
+        if aggregated is not None:
+            self.final_parameters = aggregated
+
         downlink = parameter_bytes(aggregated) * len(results) if aggregated is not None else 0
         ROUND.set(server_round)
         COMMUNICATION_BYTES.labels("uplink").set(uplink)
         COMMUNICATION_BYTES.labels("downlink").set(downlink)
         self.store.record(self.experiment, "federation_round", {"uplink_bytes": uplink, "downlink_bytes": downlink, **(metrics or {})}, round_number=server_round)
         return aggregated, metrics
+
+    def get_final_parameters_numpy(self):
+        """Return the latest global model weights as NumPy arrays."""
+        if self.final_parameters is None:
+            raise RuntimeError("No global model parameters are available")
+
+        return parameters_to_ndarrays(self.final_parameters)
 
     def aggregate_evaluate(self, server_round, results, failures):
         """Record evaluation values from Flower workers in server-visible gauges."""
