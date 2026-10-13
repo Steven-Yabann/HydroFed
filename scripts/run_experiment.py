@@ -13,7 +13,7 @@ from hydrofed.data.pipeline import load_client_partition
 from hydrofed.federation.client import HydroFedClient
 from hydrofed.federation.strategy import TrackingFedAvg
 from hydrofed.models.lstm_autoencoder import build_model
-from hydrofed.monitoring import serve
+from hydrofed.monitoring import serve, F1
 from hydrofed.federation.checkpoint import save_global_checkpoint
 
 p = argparse.ArgumentParser()
@@ -88,6 +88,11 @@ if a.evaluate:
             client_id=file.stem,
         )
 
+    macro_f1 = sum(
+    result["f1"] for result in evaluation_results.values()
+    ) / len(evaluation_results)
+
+    F1.set(macro_f1)
     print(json.dumps(evaluation_results, indent=2))
 
 if a.keep_metrics_seconds > 0:
