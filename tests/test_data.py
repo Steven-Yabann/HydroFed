@@ -1,6 +1,7 @@
 import json
 import numpy as np
 from hydrofed.data.pipeline import *
+from hydrofed.data.splits import split_plant_windows
 
 def test_preprocessing_fills_and_scales():
     frame=generate_synthetic_telemetry(50,3); frame.loc[2,"sensor_1"]=np.nan
@@ -28,3 +29,27 @@ def test_download_skab_reuses_existing_csv(tmp_path, monkeypatch):
         raise AssertionError("existing SKAB data should not be downloaded again")
     monkeypatch.setattr("hydrofed.data.pipeline.requests.get", unexpected_request)
     assert download_skab(dataset)==dataset
+
+def test_plant_split_keeps_train_calibration_and_test_disjoint():
+    windows = np.arange(10 * 2, dtype=np.float32).reshape(10, 2, 1)
+    labels = np.array([0, 1, 0, 0, 1, 0, 0, 0, 1, 0])
+
+    split = split_plant_windows(
+        windows,
+        labels,
+        train_fraction=0.5,
+        calibration_fraction=0.2,
+    )
+
+    np.testing.assert_array_equal(
+        split.train_windows[:, 0, 0],
+        np.array([0, 4, 6], dtype=np.float32),
+    )
+    np.testing.assert_array_equal(
+        split.calibration_windows[:, 0, 0],
+        np.array([10, 12], dtype=np.float32),
+    )
+    np.testing.assert_array_equal(
+        split.test_labels,
+        np.array([0, 1, 0]),
+    )
