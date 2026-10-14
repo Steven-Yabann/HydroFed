@@ -15,6 +15,7 @@ from hydrofed.federation.strategy import TrackingFedAvg
 from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.monitoring import serve
 from hydrofed.federation.checkpoint import save_global_checkpoint
+from hydrofed.data.splits import split_plant_windows
 
 p = argparse.ArgumentParser()
 
@@ -54,17 +55,11 @@ if a.evaluate:
 
     for file in files:
         windows, labels = load_client_partition(file)
-
-        normal_windows = windows[labels == 0]
-        split = max(1, int(0.8 * len(normal_windows)))
-
-        calibration_windows = normal_windows[split:]
-        if len(calibration_windows) == 0:
-            calibration_windows = normal_windows[:split]
+        plant_split = split_plant_windows(windows, labels)
 
         calibration_errors = reconstruction_errors(
             global_model,
-            calibration_windows,
+            plant_split.calibration_windows,
         )
 
         threshold = calibrate_threshold(
@@ -74,8 +69,8 @@ if a.evaluate:
 
         metrics = evaluate_model(
             global_model,
-            windows,
-            labels,
+            plant_split.test_windows,
+            plant_split.test_labels,
             threshold,
         )
 
