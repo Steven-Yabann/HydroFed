@@ -112,6 +112,28 @@ def save_partitions(partitions: dict[str, tuple[np.ndarray, np.ndarray]], output
     path.write_text(json.dumps(summary, indent=2) + "\n")
     return path
 
+def partition_temporal(
+    windows: np.ndarray,
+    labels: np.ndarray,
+    n_clients: int = 5,
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Assign each plant one contiguous time-ordered window segment."""
+    if n_clients <= 0:
+        raise ValueError("n_clients must be positive")
+
+    if len(windows) != len(labels):
+        raise ValueError("windows and labels must have the same length")
+
+    indices = np.array_split(np.arange(len(windows)), n_clients)
+
+    return {
+        f"plant_{index + 1}": (
+            windows[client_indices],
+            labels[client_indices],
+        )
+        for index, client_indices in enumerate(indices)
+    }
+
 def load_client_partition(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     with np.load(path) as data:
         return data["windows"].astype(np.float32), data["labels"].astype(np.int64)

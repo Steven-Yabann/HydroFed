@@ -30,6 +30,25 @@ def test_download_skab_reuses_existing_csv(tmp_path, monkeypatch):
     monkeypatch.setattr("hydrofed.data.pipeline.requests.get", unexpected_request)
     assert download_skab(dataset)==dataset
 
+def test_temporal_partition_keeps_window_order_per_plant():
+    windows = np.arange(10 * 2, dtype=np.float32).reshape(10, 2, 1)
+    labels = np.arange(10, dtype=np.int64)
+
+    parts = partition_temporal(windows, labels, n_clients=3)
+
+    np.testing.assert_array_equal(
+        parts["plant_1"][1],
+        np.array([0, 1, 2, 3]),
+    )
+    np.testing.assert_array_equal(
+        parts["plant_2"][1],
+        np.array([4, 5, 6]),
+    )
+    np.testing.assert_array_equal(
+        parts["plant_3"][1],
+        np.array([7, 8, 9]),
+    )
+
 def test_plant_split_keeps_train_calibration_and_test_disjoint():
     windows = np.arange(10 * 2, dtype=np.float32).reshape(10, 2, 1)
     labels = np.array([0, 1, 0, 0, 1, 0, 0, 0, 1, 0])
