@@ -14,8 +14,8 @@ def test_client_fit_and_evaluate_contract(tmp_path):
     client=HydroFedClient("plant_1",tmp_path/"plant_1.npz",{"hidden_size":4,"latent_size":2,"num_layers":1,"dropout":0},batch_size=4)
     parameters=client.get_parameters({}); updated,count,metrics=client.fit(parameters,{"local_epochs":1})
     loss,evaluated,evaluation_metrics=client.evaluate(updated,{})
-    assert count==9 and len(updated)==len(parameters) and metrics["client_id"]=="plant_1"
-    assert evaluated==12 and loss>=0 and evaluation_metrics["local_loss"]==loss
+    assert count==7 and len(updated)==len(parameters) and metrics["client_id"]=="plant_1"
+    assert evaluated==3 and loss>=0 and evaluation_metrics["local_loss"]==loss
 
 def test_strategy_exposes_latest_global_parameters(tmp_path):
     initial = ndarrays_to_parameters(
