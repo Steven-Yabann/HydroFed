@@ -72,3 +72,27 @@ def test_plant_split_keeps_train_calibration_and_test_disjoint():
         split.test_labels,
         np.array([0, 1, 0]),
     )
+
+def test_windows_do_not_cross_recording_boundaries():
+    features = np.array(
+        [[0], [0], [0], [0], [100], [100], [100], [100]],
+        dtype=np.float32,
+    )
+    labels = np.zeros(8, dtype=np.int64)
+    recording_ids = np.array(
+        ["recording_a"] * 4 + ["recording_b"] * 4
+    )
+
+    windows, window_labels = create_windows_by_recording(
+        features,
+        labels,
+        recording_ids,
+        window_length=3,
+    )
+
+    assert windows.shape == (4, 3, 1)
+    assert window_labels.tolist() == [0, 0, 0, 0]
+
+    for window in windows:
+        assert np.all(window == window[0])
+        

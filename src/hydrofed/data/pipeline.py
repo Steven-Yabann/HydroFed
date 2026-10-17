@@ -134,6 +134,50 @@ def partition_temporal(
         for index, client_indices in enumerate(indices)
     }
 
+def create_windows_by_recording(
+    features: np.ndarray,
+    labels: np.ndarray,
+    recording_ids: np.ndarray,
+    window_length: int,
+    stride: int = 1,
+    label_mode: str = "any",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Create windows separately within each source recording."""
+    if len(features) != len(labels) or len(features) != len(recording_ids):
+        raise ValueError(
+            "features, labels, and recording_ids must have the same length"
+        )
+
+    window_sets = []
+    label_sets = []
+
+    for recording_id in pd.unique(recording_ids):
+        mask = recording_ids == recording_id
+        recording_features = features[mask]
+        recording_labels = labels[mask]
+
+        if len(recording_features) < window_length:
+            continue
+
+        windows, window_labels = create_windows(
+            recording_features,
+            recording_labels,
+            window_length,
+            stride,
+            label_mode,
+        )
+
+        window_sets.append(windows)
+        label_sets.append(window_labels)
+
+    if not window_sets:
+        raise ValueError("No recording contains enough rows for one full window")
+
+    return (
+        np.concatenate(window_sets),
+        np.concatenate(label_sets),
+    )
+
 def load_client_partition(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     with np.load(path) as data:
         return data["windows"].astype(np.float32), data["labels"].astype(np.int64)
