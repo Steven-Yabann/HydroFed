@@ -30,10 +30,19 @@ def download_skab(destination: str | Path, url: str = SKAB_ARCHIVE_URL) -> Path:
     return destination
 
 def load_skab_csvs(path: str | Path) -> pd.DataFrame:
-    files = sorted(Path(path).rglob("*.csv"))
+    path = Path(path)
+    files = sorted(path.rglob("*.csv"))
+
     if not files:
         raise FileNotFoundError(f"No CSV files found under {path}")
-    frames = [pd.read_csv(file, sep=None, engine="python") for file in files]
+
+    frames = []
+
+    for file in files:
+        frame = pd.read_csv(file, sep=None, engine="python")
+        frame["_recording_id"] = str(file.relative_to(path))
+        frames.append(frame)
+
     return pd.concat(frames, ignore_index=True)
 
 def sensor_columns(frame: pd.DataFrame) -> list[str]:

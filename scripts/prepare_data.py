@@ -11,6 +11,7 @@ from hydrofed.data.pipeline import (
     partition_temporal,
     prepare_dataframe,
     save_partitions,
+    create_windows_by_recording,
 )
 
 p=argparse.ArgumentParser(); p.add_argument("--input"); p.add_argument("--output", default="data/partitions")
@@ -37,7 +38,24 @@ if a.download:
         )
 frame = generate_synthetic_telemetry(a.rows, a.features) if a.synthetic else load_skab_csvs(a.input)
 frame, columns = prepare_dataframe(frame); label = frame["anomaly"].to_numpy() if "anomaly" in frame else np.zeros(len(frame))
-x,y=create_windows(frame[columns].to_numpy(), label, a.window, a.stride)
+
+features = frame[columns].to_numpy()
+
+if "_recording_id" in frame:
+    x, y = create_windows_by_recording(
+        features,
+        label,
+        frame["_recording_id"].to_numpy(),
+        a.window,
+        a.stride,
+    )
+else:
+    x, y = create_windows(
+        features,
+        label,
+        a.window,
+        a.stride,
+    )
 
 partitioner = (
     partition_temporal

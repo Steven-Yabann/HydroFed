@@ -95,4 +95,20 @@ def test_windows_do_not_cross_recording_boundaries():
 
     for window in windows:
         assert np.all(window == window[0])
-        
+
+def test_load_skab_csvs_tracks_the_source_recording(tmp_path):
+    (tmp_path / "a.csv").write_text(
+        "sensor,anomaly\n1,0\n2,0\n"
+    )
+    (tmp_path / "b.csv").write_text(
+        "sensor,anomaly\n3,1\n4,0\n"
+    )
+
+    frame = load_skab_csvs(tmp_path)
+
+    assert frame["_recording_id"].tolist() == [
+        "a.csv",
+        "a.csv",
+        "b.csv",
+        "b.csv",
+    ]
