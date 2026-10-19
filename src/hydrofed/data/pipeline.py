@@ -30,10 +30,19 @@ def download_skab(destination: str | Path, url: str = SKAB_ARCHIVE_URL) -> Path:
     return destination
 
 def load_skab_csvs(path: str | Path) -> pd.DataFrame:
-    files = sorted(Path(path).rglob("*.csv"))
+    path = Path(path)
+    files = sorted(path.rglob("*.csv"))
+
     if not files:
         raise FileNotFoundError(f"No CSV files found under {path}")
-    frames = [pd.read_csv(file, sep=None, engine="python") for file in files]
+
+    frames = []
+
+    for file in files:
+        frame = pd.read_csv(file, sep=None, engine="python")
+        frame["_recording_id"] = str(file.relative_to(path))
+        frames.append(frame)
+
     return pd.concat(frames, ignore_index=True)
 
 def sensor_columns(frame: pd.DataFrame) -> list[str]:
@@ -111,6 +120,72 @@ def save_partitions(partitions: dict[str, tuple[np.ndarray, np.ndarray]], output
     path = directory / "partition_summary.json"
     path.write_text(json.dumps(summary, indent=2) + "\n")
     return path
+
+def partition_temporal(
+    windows: np.ndarray,
+    labels: np.ndarray,
+    n_clients: int = 5,
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Assign each plant one contiguous time-ordered window segment."""
+    if n_clients <= 0:
+        raise ValueError("n_clients must be positive")
+
+    if len(windows) != len(labels):
+        raise ValueError("windows and labels must have the same length")
+
+    indices = np.array_split(np.arange(len(windows)), n_clients)
+
+    return {
+        f"plant_{index + 1}": (
+            windows[client_indices],
+            labels[client_indices],
+        )
+        for index, client_indices in enumerate(indices)
+    }
+
+def create_windows_by_recording(
+    features: np.ndarray,
+    labels: np.ndarray,
+    recording_ids: np.ndarray,
+    window_length: int,
+    stride: int = 1,
+    label_mode: str = "any",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Create windows separately within each source recording."""
+    if len(features) != len(labels) or len(features) != len(recording_ids):
+        raise ValueError(
+            "features, labels, and recording_ids must have the same length"
+        )
+
+    window_sets = []
+    label_sets = []
+
+    for recording_id in pd.unique(recording_ids):
+        mask = recording_ids == recording_id
+        recording_features = features[mask]
+        recording_labels = labels[mask]
+
+        if len(recording_features) < window_length:
+            continue
+
+        windows, window_labels = create_windows(
+            recording_features,
+            recording_labels,
+            window_length,
+            stride,
+            label_mode,
+        )
+
+        window_sets.append(windows)
+        label_sets.append(window_labels)
+
+    if not window_sets:
+        raise ValueError("No recording contains enough rows for one full window")
+
+    return (
+        np.concatenate(window_sets),
+        np.concatenate(label_sets),
+    )
 
 def load_client_partition(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     with np.load(path) as data:
