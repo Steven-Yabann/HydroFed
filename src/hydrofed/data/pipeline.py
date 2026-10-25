@@ -40,6 +40,12 @@ def load_skab_csvs(path: str | Path) -> pd.DataFrame:
 
     for file in files:
         frame = pd.read_csv(file, sep=None, engine="python")
+        for label_name in LABEL_NAMES:
+            if label_name not in frame:
+                frame[label_name] = 0
+            else:
+                frame[label_name] = frame[label_name].fillna(0).astype(np.int64)
+
         frame["_recording_id"] = str(file.relative_to(path))
         frames.append(frame)
 
@@ -50,8 +56,17 @@ def sensor_columns(frame: pd.DataFrame) -> list[str]:
     return [c for c in frame.select_dtypes(include=np.number).columns if c.lower() not in excluded]
 
 def prepare_dataframe(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
-    clean = frame.copy().ffill().bfill()
+    clean = frame.copy()
     columns = sensor_columns(clean)
+
+    if "_recording_id" in clean:
+        clean[columns] = clean.groupby(
+            "_recording_id",
+            sort=False,
+        )[columns].transform(lambda recording: recording.ffill().bfill())
+    else:
+        clean[columns] = clean[columns].ffill().bfill()
+
     if not columns:
         raise ValueError("No numeric sensor columns found")
     mins, spans = clean[columns].min(), clean[columns].max() - clean[columns].min()

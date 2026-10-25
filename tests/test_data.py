@@ -129,3 +129,36 @@ def test_temporal_partition_requires_minimum_anomalies_per_plant():
     )
 
     assert all(client_labels.sum() >= 4 for _, client_labels in parts.values())
+
+def test_load_skab_csvs_marks_unlabeled_recording_as_normal(tmp_path):
+    (tmp_path / "normal.csv").write_text(
+        "sensor\n1\n2\n"
+    )
+    (tmp_path / "labeled.csv").write_text(
+        "sensor,anomaly\n3,0\n4,1\n"
+    )
+
+    frame = load_skab_csvs(tmp_path)
+
+    assert frame["anomaly"].tolist() == [0, 1, 0, 0]
+
+    assert frame.groupby("_recording_id")["anomaly"].apply(list).to_dict() == {
+    "labeled.csv": [0, 1],
+    "normal.csv": [0, 0],
+    }
+
+def test_preprocessing_does_not_fill_sensor_values_across_recordings():
+    frame = pd.DataFrame(
+        {
+            "sensor": [1.0, np.nan, np.nan, 100.0],
+            "anomaly": [0, 0, 0, 0],
+            "_recording_id": ["a", "a", "b", "b"],
+        }
+    )
+
+    clean, _ = prepare_dataframe(frame)
+
+    np.testing.assert_allclose(
+        clean["sensor"].to_numpy(),
+        np.array([0.0, 0.0, 1.0, 1.0]),
+    )
