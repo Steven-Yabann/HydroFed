@@ -23,6 +23,12 @@ p.add_argument(
     choices=("temporal", "non-iid"),
     default="temporal",
 )
+p.add_argument(
+    "--minimum-anomalies",
+    type=int,
+    default=0,
+    help="Minimum anomalous windows required for each temporal plant partition",
+)
 
 a=p.parse_args()
 if not a.synthetic and not a.input:
@@ -63,8 +69,16 @@ partitioner = (
     else partition_non_iid
 )
 
+if a.partition_strategy == "non-iid" and a.minimum_anomalies:
+    p.error("--minimum-anomalies is only supported by temporal partitioning")
+
+partition_kwargs = {"n_clients": a.clients}
+
+if a.partition_strategy == "temporal":
+    partition_kwargs["minimum_anomalies"] = a.minimum_anomalies
+
 path = save_partitions(
-    partitioner(x, y, a.clients),
+    partitioner(x, y, **partition_kwargs),
     a.output,
 )
 
