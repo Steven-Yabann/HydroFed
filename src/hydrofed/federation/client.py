@@ -4,6 +4,7 @@ from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.training.local import train_epochs, reconstruction_errors
 from hydrofed.data.splits import split_plant_windows
 from hydrofed.runtime import resolve_device
+from hydrofed.reproducibility import set_random_seed
 
 class HydroFedClient(fl.client.NumPyClient):
     def __init__(
@@ -14,6 +15,7 @@ class HydroFedClient(fl.client.NumPyClient):
     epochs=1,
     batch_size=64,
     device: str = "auto",
+    seed: int = 42,
     ):
         self.client_id = str(client_id); self.windows, self.labels = load_client_partition(partition_path)
         self.model = build_model(self.windows.shape[2], model_config); self.epochs, self.batch_size = epochs, batch_size
@@ -22,11 +24,14 @@ class HydroFedClient(fl.client.NumPyClient):
             self.labels,
         )
         self.device = resolve_device(device)
+        self.seed = seed
 
 
     def get_parameters(self, config): return self.model.get_parameters_numpy()
 
     def fit(self, parameters, config):
+        set_random_seed(self.seed)
+        self.model.set_parameters_numpy(parameters)
         self.model.set_parameters_numpy(parameters)
 
         loss = train_epochs(

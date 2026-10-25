@@ -9,6 +9,7 @@ from hydrofed.evaluation import evaluate_model
 from hydrofed.storage import ExperimentStore
 from hydrofed.data.splits import split_plant_windows
 from hydrofed.runtime import resolve_device
+from hydrofed.reproducibility import set_random_seed
 
 def train_baselines(
     partition_dir,
@@ -18,8 +19,10 @@ def train_baselines(
     model_config=None,
     db_path=None,
     device: str = "auto",
+    seed: int = 42,
 ):
     output = Path(output_dir); output.mkdir(parents=True, exist_ok=True); results = {}
+    set_random_seed(seed)
     device = resolve_device(device)
     store = ExperimentStore(db_path) if db_path else None
     for file in sorted(Path(partition_dir).glob("plant_*.npz")):
