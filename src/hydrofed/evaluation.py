@@ -22,6 +22,6 @@ def compute_metrics(labels: np.ndarray, scores: np.ndarray, threshold: float) ->
         "threshold": float(threshold),
     }
 
-def evaluate_model(model, windows, labels, threshold):
-    scores = reconstruction_errors(model, windows)
+def evaluate_model(model, windows, labels, threshold, device: str = "cpu"):
+    scores = reconstruction_errors(model, windows, device=device)
     return compute_metrics(labels, scores, threshold) | {"mean_anomaly_score": float(scores.mean())}
