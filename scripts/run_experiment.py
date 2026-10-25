@@ -29,10 +29,17 @@ p.add_argument("--evaluate", action="store_true")
 p.add_argument("--threshold-percentile", type=float, default=95.0)
 
 a=p.parse_args(); files=sorted(Path(a.partitions).glob("plant_*.npz"))
-if not files: raise SystemExit("No plant partitions found; run make partition-synthetic")
-n_features=load_client_partition(files[0])[0].shape[2]
+
+if not files: 
+    raise SystemExit("No plant partitions found; run make partition-synthetic")
+
+n_features=load_client_partition(files[0])[0].shape[2]\
+
 serve(8000)
-def client_fn(cid): return HydroFedClient(cid, files[int(cid)], epochs=a.epochs).to_client()
+
+def client_fn(cid): 
+    return HydroFedClient(cid, files[int(cid)], epochs=a.epochs).to_client()
+
 strategy=TrackingFedAvg(db_path=a.db, fraction_fit=1.0, fraction_evaluate=1.0, min_available_clients=len(files), initial_parameters=ndarrays_to_parameters(build_model(n_features).get_parameters_numpy()))
 fl.simulation.start_simulation(client_fn=client_fn,num_clients=len(files),config=fl.server.ServerConfig(num_rounds=a.rounds),strategy=strategy,client_resources={"num_cpus":1})
 final_parameters = strategy.get_final_parameters_numpy()

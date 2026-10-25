@@ -58,8 +58,11 @@ def prepare_dataframe(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     clean[columns] = (clean[columns] - mins) / spans.replace(0, 1)
     return clean, columns
 
-def create_windows(features: np.ndarray, labels: np.ndarray, window_length: int,
-                   stride: int = 1, label_mode: str = "any") -> tuple[np.ndarray, np.ndarray]:
+def create_windows(features: np.ndarray,
+                   labels: np.ndarray,
+                   window_length: int,
+                   stride: int = 1,
+                   label_mode: str = "any") -> tuple[np.ndarray, np.ndarray]:
     if window_length <= 0 or stride <= 0 or len(features) < window_length:
         raise ValueError("window_length/stride must be positive and data must contain a full window")
     if label_mode not in {"any", "majority"}:
