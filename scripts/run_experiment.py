@@ -16,6 +16,8 @@ from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.monitoring import serve, F1
 from hydrofed.federation.checkpoint import save_global_checkpoint
 from hydrofed.data.splits import split_plant_windows
+from hydrofed.runtime import resolve_device
+from hydrofed.reproducibility import set_random_seed
 
 p = argparse.ArgumentParser()
 
@@ -27,14 +29,46 @@ p.add_argument("--keep-metrics-seconds", type=int, default=0)
 p.add_argument("--output", default="artifacts/federated/global_model.pt")
 p.add_argument("--evaluate", action="store_true")
 p.add_argument("--threshold-percentile", type=float, default=95.0)
+p.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+p.add_argument("--seed", type=int, default=42)
 
 a=p.parse_args(); files=sorted(Path(a.partitions).glob("plant_*.npz"))
-if not files: raise SystemExit("No plant partitions found; run make partition-synthetic")
-n_features=load_client_partition(files[0])[0].shape[2]
+
+set_random_seed(a.seed)
+device = resolve_device(a.device)
+print(f"Using device: {device}")
+
+if not files: 
+    raise SystemExit("No plant partitions found; run make partition-synthetic")
+
+n_features=load_client_partition(files[0])[0].shape[2]\
+
 serve(8000)
-def client_fn(cid): return HydroFedClient(cid, files[int(cid)], epochs=a.epochs).to_client()
+
+def client_fn(cid):
+    return HydroFedClient(
+        cid,
+        files[int(cid)],
+        epochs=a.epochs,
+        device=device,
+        seed=a.seed + int(cid),
+    ).to_client()
+
 strategy=TrackingFedAvg(db_path=a.db, fraction_fit=1.0, fraction_evaluate=1.0, min_available_clients=len(files), initial_parameters=ndarrays_to_parameters(build_model(n_features).get_parameters_numpy()))
-fl.simulation.start_simulation(client_fn=client_fn,num_clients=len(files),config=fl.server.ServerConfig(num_rounds=a.rounds),strategy=strategy,client_resources={"num_cpus":1})
+
+client_resources = {"num_cpus": 1}
+
+if device == "cuda":
+    client_resources["num_gpus"] = 1.0
+
+fl.simulation.start_simulation(
+    client_fn=client_fn,
+    num_clients=len(files),
+    config=fl.server.ServerConfig(num_rounds=a.rounds),
+    strategy=strategy,
+    client_resources=client_resources,
+)
+
 final_parameters = strategy.get_final_parameters_numpy()
 
 checkpoint_path = save_global_checkpoint(
@@ -60,6 +94,7 @@ if a.evaluate:
         calibration_errors = reconstruction_errors(
             global_model,
             plant_split.calibration_windows,
+            device=device,
         )
 
         threshold = calibrate_threshold(
@@ -72,6 +107,7 @@ if a.evaluate:
             plant_split.test_windows,
             plant_split.test_labels,
             threshold,
+            device=device,
         )
 
         evaluation_results[file.stem] = metrics

@@ -8,9 +8,22 @@ from hydrofed.training.local import train_epochs, reconstruction_errors, calibra
 from hydrofed.evaluation import evaluate_model
 from hydrofed.storage import ExperimentStore
 from hydrofed.data.splits import split_plant_windows
+from hydrofed.runtime import resolve_device
+from hydrofed.reproducibility import set_random_seed
 
-def train_baselines(partition_dir, output_dir, epochs=1, batch_size=64, model_config=None, db_path=None):
+def train_baselines(
+    partition_dir,
+    output_dir,
+    epochs=1,
+    batch_size=64,
+    model_config=None,
+    db_path=None,
+    device: str = "auto",
+    seed: int = 42,
+):
     output = Path(output_dir); output.mkdir(parents=True, exist_ok=True); results = {}
+    set_random_seed(seed)
+    device = resolve_device(device)
     store = ExperimentStore(db_path) if db_path else None
     for file in sorted(Path(partition_dir).glob("plant_*.npz")):
         windows, labels = load_client_partition(file)
@@ -23,11 +36,13 @@ def train_baselines(partition_dir, output_dir, epochs=1, batch_size=64, model_co
             plant_split.train_windows,
             epochs,
             batch_size,
+            device=device
         )
 
         calibration_errors = reconstruction_errors(
             model,
             plant_split.calibration_windows,
+            device=device
         )
 
         threshold = calibrate_threshold(calibration_errors)
@@ -37,6 +52,7 @@ def train_baselines(partition_dir, output_dir, epochs=1, batch_size=64, model_co
             plant_split.test_windows,
             plant_split.test_labels,
             threshold,
+            device=device
         ) | {"loss": loss}
 
         torch.save(

@@ -58,8 +58,11 @@ def prepare_dataframe(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     clean[columns] = (clean[columns] - mins) / spans.replace(0, 1)
     return clean, columns
 
-def create_windows(features: np.ndarray, labels: np.ndarray, window_length: int,
-                   stride: int = 1, label_mode: str = "any") -> tuple[np.ndarray, np.ndarray]:
+def create_windows(features: np.ndarray,
+                   labels: np.ndarray,
+                   window_length: int,
+                   stride: int = 1,
+                   label_mode: str = "any") -> tuple[np.ndarray, np.ndarray]:
     if window_length <= 0 or stride <= 0 or len(features) < window_length:
         raise ValueError("window_length/stride must be positive and data must contain a full window")
     if label_mode not in {"any", "majority"}:
@@ -125,22 +128,67 @@ def partition_temporal(
     windows: np.ndarray,
     labels: np.ndarray,
     n_clients: int = 5,
+    minimum_anomalies: int = 0,
 ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """Assign each plant one contiguous time-ordered window segment."""
+    """Assign each plant an ordered time segment with a minimum anomaly count."""
     if n_clients <= 0:
         raise ValueError("n_clients must be positive")
 
     if len(windows) != len(labels):
         raise ValueError("windows and labels must have the same length")
 
-    indices = np.array_split(np.arange(len(windows)), n_clients)
+    if minimum_anomalies < 0:
+        raise ValueError("minimum_anomalies cannot be negative")
+
+    total_anomalies = int(labels.sum())
+    required_anomalies = n_clients * minimum_anomalies
+
+    if total_anomalies < required_anomalies:
+        raise ValueError(
+            f"Cannot give {n_clients} plants at least {minimum_anomalies} "
+            f"anomalies each: only {total_anomalies} anomalous windows exist"
+        )
+
+    # Keep time order, but move a boundary right when its plant would otherwise
+    # receive too few anomalies. Reserve enough anomalies for later plants.
+    boundaries = [0]
+    start = 0
+
+    for plant_index in range(1, n_clients):
+        remaining_plants = n_clients - plant_index
+        ideal_end = (
+            len(windows) * plant_index + n_clients - 1
+        ) // n_clients
+
+        valid_ends = []
+        for end in range(start + 1, len(windows)):
+            current_anomalies = int(labels[start:end].sum())
+            remaining_anomalies = int(labels[end:].sum())
+
+            if (
+                current_anomalies >= minimum_anomalies
+                and remaining_anomalies >= remaining_plants * minimum_anomalies
+            ):
+                valid_ends.append(end)
+
+        if not valid_ends:
+            raise ValueError(
+                "Cannot create contiguous temporal partitions that satisfy "
+                "the requested minimum anomaly count"
+            )
+
+        end = min(valid_ends, key=lambda candidate: abs(candidate - ideal_end))
+        boundaries.append(end)
+        start = end
+
+    boundaries.append(len(windows))
 
     return {
         f"plant_{index + 1}": (
-            windows[client_indices],
-            labels[client_indices],
+            windows[boundaries[index]:boundaries[index + 1]],
+            labels[boundaries[index]:boundaries[index + 1]],
         )
-        for index, client_indices in enumerate(indices)
+        for index in range(n_clients)
     }
 
 def create_windows_by_recording(

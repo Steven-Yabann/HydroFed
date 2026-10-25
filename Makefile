@@ -18,7 +18,7 @@ model-demo:
 data:
 	$(PYTHON) src/hydrofed/data/pipeline.py
 partition:
-	$(PYTHON) scripts/prepare_data.py --download --input data/SKAB --output data/partitions --partition-strategy temporal
+	$(PYTHON) scripts/prepare_data.py --download --input data/SKAB --output data/partitions --partition-strategy temporal --minimum-anomalies 100
 partition-synthetic:
 	$(PYTHON) scripts/prepare_data.py --synthetic --output data/partitions
 baseline:

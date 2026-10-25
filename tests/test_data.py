@@ -112,3 +112,20 @@ def test_load_skab_csvs_tracks_the_source_recording(tmp_path):
         "b.csv",
         "b.csv",
     ]
+
+def test_temporal_partition_requires_minimum_anomalies_per_plant():
+    windows = np.arange(20 * 2, dtype=np.float32).reshape(20, 2, 1)
+    labels = np.array(
+        [0, 0, 0, 1, 1, 0, 0, 1, 1, 0,
+         0, 1, 1, 0, 0, 1, 1, 0, 1, 1],
+        dtype=np.int64,
+    )
+
+    parts = partition_temporal(
+        windows,
+        labels,
+        n_clients=2,
+        minimum_anomalies=4,
+    )
+
+    assert all(client_labels.sum() >= 4 for _, client_labels in parts.values())

@@ -1,0 +1,7 @@
+.venv/bin/python scripts/run_experiment.py \
+  --rounds 10 \
+  --epochs 5 \
+  --evaluate \
+  --db artifacts/run_2026_10_23.db \
+  --output artifacts/federated/run_2026_10_23.pt \
+  --keep-metrics-seconds 600
