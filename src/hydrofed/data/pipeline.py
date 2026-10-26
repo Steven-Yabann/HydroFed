@@ -206,6 +206,89 @@ def partition_temporal(
         for index in range(n_clients)
     }
 
+def partition_temporal_by_recording(
+    windows: np.ndarray,
+    labels: np.ndarray,
+    recording_ids: np.ndarray,
+    n_clients: int = 5,
+    minimum_anomalies: int = 0,
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Assign contiguous groups of whole recordings to simulated plants."""
+    if n_clients <= 0:
+        raise ValueError("n_clients must be positive")
+
+    if len(windows) != len(labels) or len(windows) != len(recording_ids):
+        raise ValueError(
+            "windows, labels, and recording_ids must have the same length"
+        )
+
+    if minimum_anomalies < 0:
+        raise ValueError("minimum_anomalies cannot be negative")
+
+    recording_starts = np.flatnonzero(
+        np.r_[True, recording_ids[1:] != recording_ids[:-1]]
+    )
+    recording_ends = np.r_[recording_starts[1:], len(recording_ids)]
+
+    if len(recording_starts) < n_clients:
+        raise ValueError("Need at least one recording per client")
+
+    if len(pd.unique(recording_ids)) != len(recording_starts):
+        raise ValueError("recording_ids must be grouped by source recording")
+
+    total_anomalies = int(labels.sum())
+    required_anomalies = n_clients * minimum_anomalies
+
+    if total_anomalies < required_anomalies:
+        raise ValueError(
+            f"Cannot give {n_clients} plants at least {minimum_anomalies} "
+            f"anomalies each: only {total_anomalies} anomalous windows exist"
+        )
+
+    boundaries = [0]
+    start_recording = 0
+
+    for plant_index in range(1, n_clients):
+        remaining_plants = n_clients - plant_index
+        ideal_end = len(windows) * plant_index / n_clients
+        valid_ends = []
+
+        for end_recording in range(
+            start_recording + 1,
+            len(recording_ends) - remaining_plants + 1,
+        ):
+            end = recording_ends[end_recording - 1]
+            current_anomalies = int(labels[boundaries[-1]:end].sum())
+            remaining_anomalies = int(labels[end:].sum())
+
+            if (
+                current_anomalies >= minimum_anomalies
+                and remaining_anomalies >= remaining_plants * minimum_anomalies
+            ):
+                valid_ends.append((end, end_recording))
+
+        if not valid_ends:
+            raise ValueError(
+                "Cannot partition whole recordings while satisfying the "
+                "requested minimum anomaly count"
+            )
+
+        end, start_recording = min(
+            valid_ends,
+            key=lambda candidate: abs(candidate[0] - ideal_end),
+        )
+        boundaries.append(end)
+
+    boundaries.append(len(windows))
+
+    return {
+        f"plant_{index + 1}": (
+            windows[boundaries[index]:boundaries[index + 1]],
+            labels[boundaries[index]:boundaries[index + 1]],
+        )
+        for index in range(n_clients)
+    }
+
 def create_windows_with_recording_ids(
     features: np.ndarray,
     labels: np.ndarray,

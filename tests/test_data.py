@@ -186,3 +186,30 @@ def test_windows_keep_their_source_recording_id():
         "recording_b",
         "recording_b",
     ]
+
+def test_recording_aware_partition_does_not_split_recordings():
+    windows = np.arange(12, dtype=np.float32).reshape(12, 1, 1)
+    labels = np.array(
+        [0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0],
+        dtype=np.int64,
+    )
+    recording_ids = np.array(
+        ["a"] * 3 + ["b"] * 3 + ["c"] * 3 + ["d"] * 3
+    )
+
+    parts = partition_temporal_by_recording(
+        windows,
+        labels,
+        recording_ids,
+        n_clients=2,
+        minimum_anomalies=1,
+    )
+
+    np.testing.assert_array_equal(
+        parts["plant_1"][0][:, 0, 0],
+        np.arange(6, dtype=np.float32),
+    )
+    np.testing.assert_array_equal(
+        parts["plant_2"][0][:, 0, 0],
+        np.arange(6, 12, dtype=np.float32),
+    )
