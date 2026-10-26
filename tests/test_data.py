@@ -162,3 +162,27 @@ def test_preprocessing_does_not_fill_sensor_values_across_recordings():
         clean["sensor"].to_numpy(),
         np.array([0.0, 0.0, 1.0, 1.0]),
     )
+
+def test_windows_keep_their_source_recording_id():
+    features = np.array(
+        [[0], [0], [0], [0], [100], [100], [100], [100]],
+        dtype=np.float32,
+    )
+    labels = np.zeros(8, dtype=np.int64)
+    recording_ids = np.array(
+        ["recording_a"] * 4 + ["recording_b"] * 4
+    )
+
+    _, _, window_recording_ids = create_windows_with_recording_ids(
+        features,
+        labels,
+        recording_ids,
+        window_length=3,
+    )
+
+    assert window_recording_ids.tolist() == [
+        "recording_a",
+        "recording_a",
+        "recording_b",
+        "recording_b",
+    ]

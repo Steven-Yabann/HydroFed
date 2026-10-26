@@ -206,15 +206,15 @@ def partition_temporal(
         for index in range(n_clients)
     }
 
-def create_windows_by_recording(
+def create_windows_with_recording_ids(
     features: np.ndarray,
     labels: np.ndarray,
     recording_ids: np.ndarray,
     window_length: int,
     stride: int = 1,
     label_mode: str = "any",
-) -> tuple[np.ndarray, np.ndarray]:
-    """Create windows separately within each source recording."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Create windows within recordings and retain each window's source ID."""
     if len(features) != len(labels) or len(features) != len(recording_ids):
         raise ValueError(
             "features, labels, and recording_ids must have the same length"
@@ -222,6 +222,7 @@ def create_windows_by_recording(
 
     window_sets = []
     label_sets = []
+    window_recording_sets = []
 
     for recording_id in pd.unique(recording_ids):
         mask = recording_ids == recording_id
@@ -241,6 +242,9 @@ def create_windows_by_recording(
 
         window_sets.append(windows)
         label_sets.append(window_labels)
+        window_recording_sets.append(
+            np.full(len(windows), recording_id, dtype=object)
+        )
 
     if not window_sets:
         raise ValueError("No recording contains enough rows for one full window")
@@ -248,7 +252,28 @@ def create_windows_by_recording(
     return (
         np.concatenate(window_sets),
         np.concatenate(label_sets),
+        np.concatenate(window_recording_sets),
     )
+
+
+def create_windows_by_recording(
+    features: np.ndarray,
+    labels: np.ndarray,
+    recording_ids: np.ndarray,
+    window_length: int,
+    stride: int = 1,
+    label_mode: str = "any",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Create windows separately within each source recording."""
+    windows, window_labels, _ = create_windows_with_recording_ids(
+        features,
+        labels,
+        recording_ids,
+        window_length,
+        stride,
+        label_mode,
+    )
+    return windows, window_labels
 
 def load_client_partition(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     with np.load(path) as data:
