@@ -71,3 +71,29 @@ def test_global_checkpoint_round_trips_model_weights(tmp_path):
 
     for expected, actual in zip(original.parameters(), restored.parameters()):
         assert torch.allclose(expected, actual)
+
+def test_strategy_records_round_with_its_run_id(tmp_path, monkeypatch):
+    strategy = TrackingFedAvg(
+        db_path=tmp_path / "experiments.db",
+        run_id="federated-run-123",
+    )
+    recorded_calls = []
+
+    def capture_record(*args, **kwargs):
+        recorded_calls.append((args, kwargs))
+
+    monkeypatch.setattr(strategy.store, "record", capture_record)
+
+    strategy.aggregate_fit(
+        server_round=1,
+        results=[],
+        failures=[],
+    )
+
+    assert len(recorded_calls) == 1
+
+    arguments, keyword_arguments = recorded_calls[0]
+    assert arguments[0] == "federated"
+    assert arguments[1] == "federation_round"
+    assert keyword_arguments["round_number"] == 1
+    assert keyword_arguments["run_id"] == "federated-run-123"
