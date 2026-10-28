@@ -40,3 +40,20 @@ def test_results_endpoint_filters_saved_experiment_data(tmp_path):
     assert results[0]["experiment"] == "federated"
     assert results[0]["client_id"] == "plant_1"
     assert results[0]["metrics"]["f1"] == 0.48
+
+def test_dashboard_origin_is_allowed(tmp_path):
+    client = TestClient(create_app(tmp_path / "experiments.db"))
+
+    response = client.options(
+        "/api/results",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert (
+        response.headers["access-control-allow-origin"]
+        == "http://localhost:5173"
+    )
