@@ -1,121 +1,204 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 
+const apiBaseUrl = (
+  import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+).replace(/\/$/, '')
+
+function formatMetric(value) {
+  return typeof value === 'number' ? value.toFixed(3) : '—'
+}
+
+function formatTimestamp(value) {
+  if (!value) return '—'
+
+  const date = new Date(`${value}Z`)
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString()
+}
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [plants, setPlants] = useState([])
+  const [apiStatus, setApiStatus] = useState('checking')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  const refreshDashboard = useCallback(async () => {
+    setLoading(true)
+    setError('')
+
+    try {
+      const [healthResponse, resultsResponse] = await Promise.all([
+        fetch(`${apiBaseUrl}/api/health`),
+        fetch(
+          `${apiBaseUrl}/api/results?experiment=federated&kind=evaluation`,
+        ),
+      ])
+
+      if (!healthResponse.ok || !resultsResponse.ok) {
+        throw new Error('The HydroFed API could not return dashboard data.')
+      }
+
+      const data = await resultsResponse.json()
+      const latestByPlant = new Map()
+
+      for (const result of data.results) {
+        if (result.client_id && !latestByPlant.has(result.client_id)) {
+          latestByPlant.set(result.client_id, result)
+        }
+      }
+
+      setPlants(
+        [...latestByPlant.values()].sort((first, second) =>
+          first.client_id.localeCompare(second.client_id),
+        ),
+      )
+      setApiStatus('connected')
+    } catch (requestError) {
+      setApiStatus('unavailable')
+      setError(requestError.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    refreshDashboard()
+  }, [refreshDashboard])
+
+  const macroMetrics = useMemo(() => {
+    if (!plants.length) {
+      return { f1: null, aucRoc: null }
+    }
+
+    const average = (metricName) => {
+      const values = plants
+        .map((plant) => plant.metrics[metricName])
+        .filter((value) => typeof value === 'number')
+
+      if (!values.length) return null
+
+      return values.reduce((sum, value) => sum + value, 0) / values.length
+    }
+
+    return {
+      f1: average('f1'),
+      aucRoc: average('auc_roc'),
+    }
+  }, [plants])
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
+    <main className="dashboard">
+      <header className="dashboard-header">
         <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
+          <p className="eyebrow">HydroFed monitoring</p>
+          <h1>Federated anomaly detection</h1>
+          <p className="subtitle">
+            Saved evaluation results from the latest federated experiment.
           </p>
         </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
+
+        <div className="header-actions">
+          <span className={`connection connection-${apiStatus}`}>
+            <span className="connection-dot" />
+            API {apiStatus}
+          </span>
+          <button type="button" onClick={refreshDashboard} disabled={loading}>
+            {loading ? 'Refreshing…' : 'Refresh data'}
+          </button>
+        </div>
+      </header>
+
+      <section className="metric-grid" aria-label="Federated experiment summary">
+        <article className="metric-card">
+          <p>Evaluated plants</p>
+          <strong>{plants.length}</strong>
+          <span>Latest saved result per plant</span>
+        </article>
+
+        <article className="metric-card">
+          <p>Macro F1</p>
+          <strong>{formatMetric(macroMetrics.f1)}</strong>
+          <span>Average across evaluated plants</span>
+        </article>
+
+        <article className="metric-card">
+          <p>Macro AUC-ROC</p>
+          <strong>{formatMetric(macroMetrics.aucRoc)}</strong>
+          <span>Single-class results are excluded</span>
+        </article>
+
+        <article className="metric-card">
+          <p>Backend address</p>
+          <strong className="api-address">{apiBaseUrl}</strong>
+          <span>Configured at build time</span>
+        </article>
       </section>
 
-      <div className="ticks"></div>
+      <section className="results-panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Plant evaluation results</h2>
+            <p>
+              Each row is the newest saved federated evaluation for that plant.
+            </p>
+          </div>
+        </div>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
+        {loading && (
+          <p className="state-message">Loading saved experiment results…</p>
+        )}
+
+        {!loading && error && (
+          <div className="error-message">
+            <strong>Could not load the dashboard.</strong>
+            <span>{error}</span>
+          </div>
+        )}
+
+        {!loading && !error && plants.length === 0 && (
+          <div className="empty-message">
+            <strong>No federated evaluation has been saved yet.</strong>
+            <span>
+              Run a federated experiment with <code>--evaluate</code>, then
+              refresh this page.
+            </span>
+          </div>
+        )}
+
+        {!loading && !error && plants.length > 0 && (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Plant</th>
+                  <th>Precision</th>
+                  <th>Recall</th>
+                  <th>F1</th>
+                  <th>AUC-ROC</th>
+                  <th>Threshold</th>
+                  <th>Saved</th>
+                </tr>
+              </thead>
+              <tbody>
+                {plants.map((plant) => (
+                  <tr key={plant.id}>
+                    <td>{plant.client_id}</td>
+                    <td>{formatMetric(plant.metrics.precision)}</td>
+                    <td>{formatMetric(plant.metrics.recall)}</td>
+                    <td>{formatMetric(plant.metrics.f1)}</td>
+                    <td>{formatMetric(plant.metrics.auc_roc)}</td>
+                    <td>{formatMetric(plant.metrics.threshold)}</td>
+                    <td>{formatTimestamp(plant.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    </main>
   )
 }
 
