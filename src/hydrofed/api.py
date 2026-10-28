@@ -1,0 +1,40 @@
+"""HTTP API for reading saved HydroFed experiment results."""
+
+from pathlib import Path
+
+from fastapi import FastAPI, Query
+
+from hydrofed.storage import ExperimentStore
+
+
+def create_app(
+    db_path: str | Path = "artifacts/experiments.db",
+) -> FastAPI:
+    app = FastAPI(
+        title="HydroFed API",
+        version="0.1.0",
+    )
+
+    store = ExperimentStore(db_path)
+
+    @app.get("/api/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/api/results")
+    def results(
+        experiment: str | None = None,
+        kind: str | None = None,
+        client_id: str | None = None,
+        limit: int = Query(default=100, ge=1, le=1000),
+    ) -> dict[str, list[dict]]:
+        return {
+            "results": store.list_results(
+                experiment=experiment,
+                kind=kind,
+                client_id=client_id,
+                limit=limit,
+            )
+        }
+
+    return app

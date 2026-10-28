@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "hydrofed"
 version = "0.1.0"
 description = "Federated anomaly detection for hydropower-style telemetry"
-authors = [{ name = "Your Name" }]
+authors = [{ name = "Steven Yabann" }]
 requires-python = ">=3.11"
 dependencies = [
     "torch==2.2.2",
@@ -17,11 +17,14 @@ dependencies = [
     "PyYAML==6.0.2",
     "prometheus-client==0.20.0",
     "requests==2.32.3",
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.34.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest==8.2.2",
+    "httpx==0.28.1",
 ]
 
 [tool.setuptools.packages.find]
