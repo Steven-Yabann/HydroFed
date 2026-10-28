@@ -74,3 +74,46 @@ def test_api_allows_a_configured_deployment_origin(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == origin
+
+def test_runs_endpoint_and_run_filter_return_one_experiment(tmp_path):
+    database = tmp_path / "experiments.db"
+    store = ExperimentStore(database)
+
+    first_run = store.create_run(
+        "federated",
+        {"rounds": 2, "seed": 42},
+    )
+    second_run = store.create_run(
+        "federated",
+        {"rounds": 5, "seed": 43},
+    )
+
+    store.record(
+        "federated",
+        "evaluation",
+        {"f1": 0.25},
+        client_id="plant_1",
+        run_id=first_run,
+    )
+    store.record(
+        "federated",
+        "evaluation",
+        {"f1": 0.50},
+        client_id="plant_1",
+        run_id=second_run,
+    )
+    store.complete_run(first_run)
+    store.complete_run(second_run)
+
+    client = TestClient(create_app(database))
+
+    runs_response = client.get("/api/runs?experiment=federated")
+    results_response = client.get(f"/api/results?run_id={first_run}")
+
+    assert runs_response.status_code == 200
+    assert len(runs_response.json()["runs"]) == 2
+
+    results = results_response.json()["results"]
+    assert len(results) == 1
+    assert results[0]["run_id"] == first_run
+    assert results[0]["metrics"]["f1"] == 0.25

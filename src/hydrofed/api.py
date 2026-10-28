@@ -71,6 +71,7 @@ def create_app(
         kind: str | None = None,
         client_id: str | None = None,
         limit: int = Query(default=100, ge=1, le=1000),
+        run_id: str | None = None,
     ) -> dict[str, list[dict]]:
         return {
             "results": store.list_results(
@@ -78,7 +79,21 @@ def create_app(
                 kind=kind,
                 client_id=client_id,
                 limit=limit,
+                run_id=run_id,
+            )
+        }
+
+    @app.get("/api/runs")
+    def runs(
+        experiment: str | None = None,
+        limit: int = Query(default=100, ge=1, le=1000),
+    ) -> dict[str, list[dict]]:
+        return {
+            "runs": store.list_runs(
+                experiment=experiment,
+                limit=limit,
             )
         }
 
     return app
+
