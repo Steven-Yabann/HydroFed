@@ -213,3 +213,19 @@ def test_recording_aware_partition_does_not_split_recordings():
         parts["plant_2"][0][:, 0, 0],
         np.arange(6, 12, dtype=np.float32),
     )
+
+def test_preprocessing_can_clean_without_normalizing():
+    frame = pd.DataFrame(
+        {
+            "sensor": [2.0, np.nan, 4.0],
+            "anomaly": [0, 0, 0],
+        }
+    )
+
+    clean, columns = prepare_dataframe(frame, normalize=False)
+
+    assert columns == ["sensor"]
+    np.testing.assert_allclose(
+        clean["sensor"].to_numpy(),
+        np.array([2.0, 2.0, 4.0]),
+    )

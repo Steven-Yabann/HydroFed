@@ -55,7 +55,10 @@ def sensor_columns(frame: pd.DataFrame) -> list[str]:
     excluded = {"datetime", "timestamp", "time", *LABEL_NAMES}
     return [c for c in frame.select_dtypes(include=np.number).columns if c.lower() not in excluded]
 
-def prepare_dataframe(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+def prepare_dataframe(
+        frame: pd.DataFrame,
+        normalize: bool = True
+    ) -> tuple[pd.DataFrame, list[str]]:
     clean = frame.copy()
     columns = sensor_columns(clean)
 
@@ -69,8 +72,11 @@ def prepare_dataframe(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 
     if not columns:
         raise ValueError("No numeric sensor columns found")
-    mins, spans = clean[columns].min(), clean[columns].max() - clean[columns].min()
-    clean[columns] = (clean[columns] - mins) / spans.replace(0, 1)
+    if normalize:
+        mins = clean[columns].min()
+        spans = clean[columns].max() - mins
+        clean[columns] = (clean[columns] - mins) / spans.replace(0, 1)
+
     return clean, columns
 
 def create_windows(features: np.ndarray,
