@@ -57,3 +57,20 @@ def test_dashboard_origin_is_allowed(tmp_path):
         response.headers["access-control-allow-origin"]
         == "http://localhost:5173"
     )
+
+def test_api_allows_a_configured_deployment_origin(tmp_path, monkeypatch):
+    origin = "https://dashboard.hydrofed.example"
+    monkeypatch.setenv("HYDROFED_ALLOWED_ORIGINS", origin)
+
+    client = TestClient(create_app(tmp_path / "experiments.db"))
+
+    response = client.options(
+        "/api/results",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin

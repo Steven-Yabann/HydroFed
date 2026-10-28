@@ -1,22 +1,65 @@
 """HTTP API for reading saved HydroFed experiment results."""
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 
 from hydrofed.storage import ExperimentStore
-from fastapi.middleware.cors import CORSMiddleware
+
+
+DEFAULT_DASHBOARD_ORIGINS = (
+    "http://localhost:5173,"
+    "http://127.0.0.1:5173"
+)
+
+
+def allowed_origins_from_environment() -> list[str]:
+    raw_origins = os.environ.get(
+        "HYDROFED_ALLOWED_ORIGINS",
+        DEFAULT_DASHBOARD_ORIGINS,
+    )
+    origins = [
+        origin.strip()
+        for origin in raw_origins.split(",")
+        if origin.strip()
+    ]
+
+    if not origins:
+        raise ValueError("HYDROFED_ALLOWED_ORIGINS must contain an origin")
+
+    return origins
 
 
 def create_app(
-    db_path: str | Path = "artifacts/experiments.db",
+    db_path: str | Path | None = None,
 ) -> FastAPI:
+    database_path = (
+        Path(db_path)
+        if db_path is not None
+        else Path(
+            os.environ.get(
+                "HYDROFED_DB_PATH",
+                "artifacts/experiments.db",
+            )
+        )
+    )
+
     app = FastAPI(
         title="HydroFed API",
         version="0.1.0",
     )
 
-    store = ExperimentStore(db_path)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins_from_environment(),
+        allow_credentials=False,
+        allow_methods=["GET"],
+        allow_headers=["*"],
+    )
+
+    store = ExperimentStore(database_path)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -38,16 +81,4 @@ def create_app(
             )
         }
 
-    app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=False,
-    allow_methods=["GET"],
-    allow_headers=["*"],
-    )
-
     return app
-
