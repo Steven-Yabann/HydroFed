@@ -4,14 +4,16 @@ import numpy as np
 
 from hydrofed.data.pipeline import (
     create_windows,
+    create_windows_by_recording,
+    create_windows_with_recording_ids,
     download_skab,
     generate_synthetic_telemetry,
     load_skab_csvs,
     partition_non_iid,
     partition_temporal,
+    partition_temporal_by_recording,
     prepare_dataframe,
     save_partitions,
-    create_windows_by_recording,
 )
 
 p=argparse.ArgumentParser(); p.add_argument("--input"); p.add_argument("--output", default="data/partitions")
@@ -47,8 +49,10 @@ frame, columns = prepare_dataframe(frame); label = frame["anomaly"].to_numpy() i
 
 features = frame[columns].to_numpy()
 
+window_recording_ids = None
+
 if "_recording_id" in frame:
-    x, y = create_windows_by_recording(
+    x, y, window_recording_ids = create_windows_with_recording_ids(
         features,
         label,
         frame["_recording_id"].to_numpy(),
@@ -63,12 +67,6 @@ else:
         a.stride,
     )
 
-partitioner = (
-    partition_temporal
-    if a.partition_strategy == "temporal"
-    else partition_non_iid
-)
-
 if a.partition_strategy == "non-iid" and a.minimum_anomalies:
     p.error("--minimum-anomalies is only supported by temporal partitioning")
 
@@ -77,12 +75,24 @@ partition_kwargs = {"n_clients": a.clients}
 if a.partition_strategy == "temporal":
     partition_kwargs["minimum_anomalies"] = a.minimum_anomalies
 
-path = save_partitions(
-    partitioner(x, y, **partition_kwargs),
-    a.output,
-)
+    if window_recording_ids is None:
+        partitions = partition_temporal(x, y, **partition_kwargs)
+        strategy_name = "temporal"
+    else:
+        partitions = partition_temporal_by_recording(
+            x,
+            y,
+            window_recording_ids,
+            **partition_kwargs,
+        )
+        strategy_name = "recording-aware temporal"
+else:
+    partitions = partition_non_iid(x, y, **partition_kwargs)
+    strategy_name = "non-iid"
+
+path = save_partitions(partitions, a.output)
 
 print(
     f"Saved {len(x)} windows across {a.clients} clients "
-    f"using {a.partition_strategy} partitioning; summary: {path}"
+    f"using {strategy_name} partitioning; summary: {path}"
 )

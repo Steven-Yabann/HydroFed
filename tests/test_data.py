@@ -129,3 +129,103 @@ def test_temporal_partition_requires_minimum_anomalies_per_plant():
     )
 
     assert all(client_labels.sum() >= 4 for _, client_labels in parts.values())
+
+def test_load_skab_csvs_marks_unlabeled_recording_as_normal(tmp_path):
+    (tmp_path / "normal.csv").write_text(
+        "sensor\n1\n2\n"
+    )
+    (tmp_path / "labeled.csv").write_text(
+        "sensor,anomaly\n3,0\n4,1\n"
+    )
+
+    frame = load_skab_csvs(tmp_path)
+
+    assert frame["anomaly"].tolist() == [0, 1, 0, 0]
+
+    assert frame.groupby("_recording_id")["anomaly"].apply(list).to_dict() == {
+    "labeled.csv": [0, 1],
+    "normal.csv": [0, 0],
+    }
+
+def test_preprocessing_does_not_fill_sensor_values_across_recordings():
+    frame = pd.DataFrame(
+        {
+            "sensor": [1.0, np.nan, np.nan, 100.0],
+            "anomaly": [0, 0, 0, 0],
+            "_recording_id": ["a", "a", "b", "b"],
+        }
+    )
+
+    clean, _ = prepare_dataframe(frame)
+
+    np.testing.assert_allclose(
+        clean["sensor"].to_numpy(),
+        np.array([0.0, 0.0, 1.0, 1.0]),
+    )
+
+def test_windows_keep_their_source_recording_id():
+    features = np.array(
+        [[0], [0], [0], [0], [100], [100], [100], [100]],
+        dtype=np.float32,
+    )
+    labels = np.zeros(8, dtype=np.int64)
+    recording_ids = np.array(
+        ["recording_a"] * 4 + ["recording_b"] * 4
+    )
+
+    _, _, window_recording_ids = create_windows_with_recording_ids(
+        features,
+        labels,
+        recording_ids,
+        window_length=3,
+    )
+
+    assert window_recording_ids.tolist() == [
+        "recording_a",
+        "recording_a",
+        "recording_b",
+        "recording_b",
+    ]
+
+def test_recording_aware_partition_does_not_split_recordings():
+    windows = np.arange(12, dtype=np.float32).reshape(12, 1, 1)
+    labels = np.array(
+        [0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0],
+        dtype=np.int64,
+    )
+    recording_ids = np.array(
+        ["a"] * 3 + ["b"] * 3 + ["c"] * 3 + ["d"] * 3
+    )
+
+    parts = partition_temporal_by_recording(
+        windows,
+        labels,
+        recording_ids,
+        n_clients=2,
+        minimum_anomalies=1,
+    )
+
+    np.testing.assert_array_equal(
+        parts["plant_1"][0][:, 0, 0],
+        np.arange(6, dtype=np.float32),
+    )
+    np.testing.assert_array_equal(
+        parts["plant_2"][0][:, 0, 0],
+        np.arange(6, 12, dtype=np.float32),
+    )
+
+def test_preprocessing_can_clean_without_normalizing():
+    frame = pd.DataFrame(
+        {
+            "sensor": [2.0, np.nan, 4.0],
+            "anomaly": [0, 0, 0],
+        }
+    )
+
+    clean, columns = prepare_dataframe(frame, normalize=False)
+
+    assert columns == ["sensor"]
+    np.testing.assert_allclose(
+        clean["sensor"].to_numpy(),
+        np.array([2.0, 2.0, 4.0]),
+    )

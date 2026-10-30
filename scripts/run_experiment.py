@@ -43,88 +43,125 @@ if not files:
 
 n_features=load_client_partition(files[0])[0].shape[2]\
 
-serve(8000)
-
-def client_fn(cid):
-    return HydroFedClient(
-        cid,
-        files[int(cid)],
-        epochs=a.epochs,
-        device=device,
-        seed=a.seed + int(cid),
-    ).to_client()
-
-strategy=TrackingFedAvg(db_path=a.db, fraction_fit=1.0, fraction_evaluate=1.0, min_available_clients=len(files), initial_parameters=ndarrays_to_parameters(build_model(n_features).get_parameters_numpy()))
-
-client_resources = {"num_cpus": 1}
-
-if device == "cuda":
-    client_resources["num_gpus"] = 1.0
-
-fl.simulation.start_simulation(
-    client_fn=client_fn,
-    num_clients=len(files),
-    config=fl.server.ServerConfig(num_rounds=a.rounds),
-    strategy=strategy,
-    client_resources=client_resources,
+run_store = ExperimentStore(a.db)
+run_id = run_store.create_run(
+    "federated",
+    {
+        "partitions": str(a.partitions),
+        "rounds": a.rounds,
+        "local_epochs": a.epochs,
+        "client_count": len(files),
+        "device": str(device),
+        "seed": a.seed,
+        "evaluate": a.evaluate,
+        "threshold_percentile": a.threshold_percentile,
+    },
 )
 
-final_parameters = strategy.get_final_parameters_numpy()
+print(f"Started federated run: {run_id}")
 
-checkpoint_path = save_global_checkpoint(
-    final_parameters,
-    n_features,
-    a.output,
-)
+try:
+    serve(8000)
 
-print(f"Saved final global model: {checkpoint_path}")
-
-
-global_model = build_model(n_features)
-global_model.set_parameters_numpy(final_parameters)
-
-if a.evaluate:
-    store = ExperimentStore(a.db)
-    evaluation_results = {}
-
-    for file in files:
-        windows, labels = load_client_partition(file)
-        plant_split = split_plant_windows(windows, labels)
-
-        calibration_errors = reconstruction_errors(
-            global_model,
-            plant_split.calibration_windows,
+    def client_fn(cid):
+        return HydroFedClient(
+            cid,
+            files[int(cid)],
+            epochs=a.epochs,
             device=device,
-        )
+            seed=a.seed + int(cid),
+        ).to_client()
 
-        threshold = calibrate_threshold(
-            calibration_errors,
-            a.threshold_percentile,
-        )
+    strategy = TrackingFedAvg(
+        db_path=a.db,
+        run_id=run_id,
+        fraction_fit=1.0,
+        fraction_evaluate=1.0,
+        min_available_clients=len(files),
+        initial_parameters=ndarrays_to_parameters(
+            build_model(n_features).get_parameters_numpy()
+        ),
+    )
 
-        metrics = evaluate_model(
-            global_model,
-            plant_split.test_windows,
-            plant_split.test_labels,
-            threshold,
-            device=device,
-        )
+    client_resources = {"num_cpus": 1}
 
-        evaluation_results[file.stem] = metrics
+    if device == "cuda":
+        client_resources["num_gpus"] = 1.0
 
-        store.record(
-            "federated",
-            "evaluation",
-            metrics,
-            client_id=file.stem,
-        )
+    fl.simulation.start_simulation(
+        client_fn=client_fn,
+        num_clients=len(files),
+        config=fl.server.ServerConfig(num_rounds=a.rounds),
+        strategy=strategy,
+        client_resources=client_resources,
+    )
 
-    macro_f1 = sum(
-    result["f1"] for result in evaluation_results.values()
-    ) / len(evaluation_results)
+    final_parameters = strategy.get_final_parameters_numpy()
 
-    F1.set(macro_f1)
-    print(json.dumps(evaluation_results, indent=2))
+    checkpoint_path = save_global_checkpoint(
+        final_parameters,
+        n_features,
+        a.output,
+    )
+
+    print(f"Saved final global model: {checkpoint_path}")
+
+    global_model = build_model(n_features)
+    global_model.set_parameters_numpy(final_parameters)
+
+    if a.evaluate:
+        evaluation_results = {}
+
+        for file in files:
+            windows, labels = load_client_partition(file)
+            plant_split = split_plant_windows(windows, labels)
+
+            calibration_errors = reconstruction_errors(
+                global_model,
+                plant_split.calibration_windows,
+                device=device,
+            )
+
+            threshold = calibrate_threshold(
+                calibration_errors,
+                a.threshold_percentile,
+            )
+
+            metrics = evaluate_model(
+                global_model,
+                plant_split.test_windows,
+                plant_split.test_labels,
+                threshold,
+                device=device,
+            )
+
+            evaluation_results[file.stem] = metrics
+
+            run_store.record(
+                "federated",
+                "evaluation",
+                metrics,
+                client_id=file.stem,
+                run_id=run_id,
+            )
+
+        macro_f1 = sum(
+            result["f1"]
+            for result in evaluation_results.values()
+        ) / len(evaluation_results)
+
+        F1.set(macro_f1)
+        print(json.dumps(evaluation_results, indent=2))
+except Exception as error:
+    run_store.complete_run(
+        run_id,
+        status="failed",
+        error_message=str(error),
+    )
+    raise
+else:
+    run_store.complete_run(run_id)
+    print(f"Completed federated run: {run_id}")
 
 if a.keep_metrics_seconds > 0:
     time.sleep(a.keep_metrics_seconds)

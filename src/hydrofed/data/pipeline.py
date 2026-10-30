@@ -40,6 +40,12 @@ def load_skab_csvs(path: str | Path) -> pd.DataFrame:
 
     for file in files:
         frame = pd.read_csv(file, sep=None, engine="python")
+        for label_name in LABEL_NAMES:
+            if label_name not in frame:
+                frame[label_name] = 0
+            else:
+                frame[label_name] = frame[label_name].fillna(0).astype(np.int64)
+
         frame["_recording_id"] = str(file.relative_to(path))
         frames.append(frame)
 
@@ -49,13 +55,28 @@ def sensor_columns(frame: pd.DataFrame) -> list[str]:
     excluded = {"datetime", "timestamp", "time", *LABEL_NAMES}
     return [c for c in frame.select_dtypes(include=np.number).columns if c.lower() not in excluded]
 
-def prepare_dataframe(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
-    clean = frame.copy().ffill().bfill()
+def prepare_dataframe(
+        frame: pd.DataFrame,
+        normalize: bool = True
+    ) -> tuple[pd.DataFrame, list[str]]:
+    clean = frame.copy()
     columns = sensor_columns(clean)
+
+    if "_recording_id" in clean:
+        clean[columns] = clean.groupby(
+            "_recording_id",
+            sort=False,
+        )[columns].transform(lambda recording: recording.ffill().bfill())
+    else:
+        clean[columns] = clean[columns].ffill().bfill()
+
     if not columns:
         raise ValueError("No numeric sensor columns found")
-    mins, spans = clean[columns].min(), clean[columns].max() - clean[columns].min()
-    clean[columns] = (clean[columns] - mins) / spans.replace(0, 1)
+    if normalize:
+        mins = clean[columns].min()
+        spans = clean[columns].max() - mins
+        clean[columns] = (clean[columns] - mins) / spans.replace(0, 1)
+
     return clean, columns
 
 def create_windows(features: np.ndarray,
@@ -191,15 +212,98 @@ def partition_temporal(
         for index in range(n_clients)
     }
 
-def create_windows_by_recording(
+def partition_temporal_by_recording(
+    windows: np.ndarray,
+    labels: np.ndarray,
+    recording_ids: np.ndarray,
+    n_clients: int = 5,
+    minimum_anomalies: int = 0,
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Assign contiguous groups of whole recordings to simulated plants."""
+    if n_clients <= 0:
+        raise ValueError("n_clients must be positive")
+
+    if len(windows) != len(labels) or len(windows) != len(recording_ids):
+        raise ValueError(
+            "windows, labels, and recording_ids must have the same length"
+        )
+
+    if minimum_anomalies < 0:
+        raise ValueError("minimum_anomalies cannot be negative")
+
+    recording_starts = np.flatnonzero(
+        np.r_[True, recording_ids[1:] != recording_ids[:-1]]
+    )
+    recording_ends = np.r_[recording_starts[1:], len(recording_ids)]
+
+    if len(recording_starts) < n_clients:
+        raise ValueError("Need at least one recording per client")
+
+    if len(pd.unique(recording_ids)) != len(recording_starts):
+        raise ValueError("recording_ids must be grouped by source recording")
+
+    total_anomalies = int(labels.sum())
+    required_anomalies = n_clients * minimum_anomalies
+
+    if total_anomalies < required_anomalies:
+        raise ValueError(
+            f"Cannot give {n_clients} plants at least {minimum_anomalies} "
+            f"anomalies each: only {total_anomalies} anomalous windows exist"
+        )
+
+    boundaries = [0]
+    start_recording = 0
+
+    for plant_index in range(1, n_clients):
+        remaining_plants = n_clients - plant_index
+        ideal_end = len(windows) * plant_index / n_clients
+        valid_ends = []
+
+        for end_recording in range(
+            start_recording + 1,
+            len(recording_ends) - remaining_plants + 1,
+        ):
+            end = recording_ends[end_recording - 1]
+            current_anomalies = int(labels[boundaries[-1]:end].sum())
+            remaining_anomalies = int(labels[end:].sum())
+
+            if (
+                current_anomalies >= minimum_anomalies
+                and remaining_anomalies >= remaining_plants * minimum_anomalies
+            ):
+                valid_ends.append((end, end_recording))
+
+        if not valid_ends:
+            raise ValueError(
+                "Cannot partition whole recordings while satisfying the "
+                "requested minimum anomaly count"
+            )
+
+        end, start_recording = min(
+            valid_ends,
+            key=lambda candidate: abs(candidate[0] - ideal_end),
+        )
+        boundaries.append(end)
+
+    boundaries.append(len(windows))
+
+    return {
+        f"plant_{index + 1}": (
+            windows[boundaries[index]:boundaries[index + 1]],
+            labels[boundaries[index]:boundaries[index + 1]],
+        )
+        for index in range(n_clients)
+    }
+
+def create_windows_with_recording_ids(
     features: np.ndarray,
     labels: np.ndarray,
     recording_ids: np.ndarray,
     window_length: int,
     stride: int = 1,
     label_mode: str = "any",
-) -> tuple[np.ndarray, np.ndarray]:
-    """Create windows separately within each source recording."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Create windows within recordings and retain each window's source ID."""
     if len(features) != len(labels) or len(features) != len(recording_ids):
         raise ValueError(
             "features, labels, and recording_ids must have the same length"
@@ -207,6 +311,7 @@ def create_windows_by_recording(
 
     window_sets = []
     label_sets = []
+    window_recording_sets = []
 
     for recording_id in pd.unique(recording_ids):
         mask = recording_ids == recording_id
@@ -226,6 +331,9 @@ def create_windows_by_recording(
 
         window_sets.append(windows)
         label_sets.append(window_labels)
+        window_recording_sets.append(
+            np.full(len(windows), recording_id, dtype=object)
+        )
 
     if not window_sets:
         raise ValueError("No recording contains enough rows for one full window")
@@ -233,7 +341,28 @@ def create_windows_by_recording(
     return (
         np.concatenate(window_sets),
         np.concatenate(label_sets),
+        np.concatenate(window_recording_sets),
     )
+
+
+def create_windows_by_recording(
+    features: np.ndarray,
+    labels: np.ndarray,
+    recording_ids: np.ndarray,
+    window_length: int,
+    stride: int = 1,
+    label_mode: str = "any",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Create windows separately within each source recording."""
+    windows, window_labels, _ = create_windows_with_recording_ids(
+        features,
+        labels,
+        recording_ids,
+        window_length,
+        stride,
+        label_mode,
+    )
+    return windows, window_labels
 
 def load_client_partition(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     with np.load(path) as data:
