@@ -261,3 +261,56 @@ code {
     padding: 18px;
   }
 }
+
+.run-picker {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px 28px;
+  align-items: end;
+  margin-bottom: 28px;
+  padding: 20px 24px;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  background: #eef2ff;
+}
+
+.run-picker h2 {
+  margin-bottom: 0;
+}
+
+.run-picker-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: min(100%, 430px);
+}
+
+.run-picker label {
+  color: #475569;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.run-picker select {
+  width: 100%;
+  border: 1px solid #b8c4df;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #172033;
+  background: white;
+  font: inherit;
+}
+
+.run-detail {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .run-picker {
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+}

@@ -18,37 +18,74 @@ function formatTimestamp(value) {
     : date.toLocaleString()
 }
 
+function runLabel(run) {
+  return `${run.experiment} · ${run.status} · ${formatTimestamp(run.started_at)}`
+}
+
 function App() {
   const [plants, setPlants] = useState([])
+  const [runs, setRuns] = useState([])
+  const [selectedRunId, setSelectedRunId] = useState('')
   const [apiStatus, setApiStatus] = useState('checking')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
-  const refreshDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (requestedRunId = '') => {
     setLoading(true)
     setError('')
 
     try {
-      const [healthResponse, resultsResponse] = await Promise.all([
+      const [healthResponse, runsResponse] = await Promise.all([
         fetch(`${apiBaseUrl}/api/health`),
-        fetch(
-          `${apiBaseUrl}/api/results?experiment=federated&kind=evaluation`,
-        ),
+        fetch(`${apiBaseUrl}/api/runs?experiment=federated`),
       ])
 
-      if (!healthResponse.ok || !resultsResponse.ok) {
+      if (!healthResponse.ok || !runsResponse.ok) {
         throw new Error('The HydroFed API could not return dashboard data.')
       }
 
-      const data = await resultsResponse.json()
+      const runData = await runsResponse.json()
+      const availableRuns = runData.runs
+      const selectedRunStillExists = availableRuns.some(
+        (run) => run.run_id === requestedRunId,
+      )
+
+      const defaultRun = availableRuns.find(
+        (run) => run.status === 'completed',
+      ) || availableRuns[0]
+
+      const nextRunId = selectedRunStillExists
+        ? requestedRunId
+        : defaultRun?.run_id || ''
+
+      const query = new URLSearchParams({
+        experiment: 'federated',
+        kind: 'evaluation',
+      })
+
+      if (nextRunId) {
+        query.set('run_id', nextRunId)
+      }
+
+      const resultsResponse = await fetch(
+        `${apiBaseUrl}/api/results?${query.toString()}`,
+      )
+
+      if (!resultsResponse.ok) {
+        throw new Error('The HydroFed API could not return evaluation results.')
+      }
+
+      const resultData = await resultsResponse.json()
       const latestByPlant = new Map()
 
-      for (const result of data.results) {
+      for (const result of resultData.results) {
         if (result.client_id && !latestByPlant.has(result.client_id)) {
           latestByPlant.set(result.client_id, result)
         }
       }
 
+      setRuns(availableRuns)
+      setSelectedRunId(nextRunId)
       setPlants(
         [...latestByPlant.values()].sort((first, second) =>
           first.client_id.localeCompare(second.client_id),
@@ -64,8 +101,13 @@ function App() {
   }, [])
 
   useEffect(() => {
-    refreshDashboard()
-  }, [refreshDashboard])
+    loadDashboard()
+  }, [loadDashboard])
+
+  const selectedRun = useMemo(
+    () => runs.find((run) => run.run_id === selectedRunId),
+    [runs, selectedRunId],
+  )
 
   const macroMetrics = useMemo(() => {
     if (!plants.length) {
@@ -95,7 +137,7 @@ function App() {
           <p className="eyebrow">HydroFed monitoring</p>
           <h1>Federated anomaly detection</h1>
           <p className="subtitle">
-            Saved evaluation results from the latest federated experiment.
+            Saved evaluation results from one selected federated experiment.
           </p>
         </div>
 
@@ -104,11 +146,57 @@ function App() {
             <span className="connection-dot" />
             API {apiStatus}
           </span>
-          <button type="button" onClick={refreshDashboard} disabled={loading}>
+          <button
+            type="button"
+            onClick={() => loadDashboard(selectedRunId)}
+            disabled={loading}
+          >
             {loading ? 'Refreshing…' : 'Refresh data'}
           </button>
         </div>
       </header>
+
+      <section className="run-picker" aria-label="Experiment run selector">
+        <div>
+          <p className="eyebrow">Selected experiment</p>
+          <h2>Choose a saved federated run</h2>
+        </div>
+
+        <div className="run-picker-control">
+          <label htmlFor="experiment-run">Experiment run</label>
+          <select
+            id="experiment-run"
+            value={selectedRunId}
+            onChange={(event) => loadDashboard(event.target.value)}
+            disabled={loading || !runs.length}
+          >
+            {!runs.length && (
+              <option value="">
+                Legacy results without a tracked run
+              </option>
+            )}
+
+            {runs.map((run) => (
+              <option key={run.run_id} value={run.run_id}>
+                {runLabel(run)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {selectedRun ? (
+          <p className="run-detail">
+            {selectedRun.result_count} saved result
+            {selectedRun.result_count === 1 ? '' : 's'} · seed{' '}
+            {selectedRun.config.seed ?? '—'} · rounds{' '}
+            {selectedRun.config.rounds ?? '—'}
+          </p>
+        ) : (
+          <p className="run-detail">
+            Showing older rows that were saved before run tracking existed.
+          </p>
+        )}
+      </section>
 
       <section className="metric-grid" aria-label="Federated experiment summary">
         <article className="metric-card">
@@ -141,7 +229,7 @@ function App() {
           <div>
             <h2>Plant evaluation results</h2>
             <p>
-              Each row is the newest saved federated evaluation for that plant.
+              Each row belongs to the selected experiment run.
             </p>
           </div>
         </div>
