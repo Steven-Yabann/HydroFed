@@ -7,9 +7,8 @@ import {
 } from './workspaces'
 import './App.css'
 
-const apiBaseUrl = (
-  import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
-).replace(/\/$/, '')
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const apiLabel = apiBaseUrl || 'same-origin /api'
 
 const navigation = [
   { id: 'dashboard', label: 'Performance', role: 'Plant operator' },
@@ -103,7 +102,7 @@ function MetricSummary({ plants, macroMetrics }) {
 
       <article className="metric-card">
         <p>Backend address</p>
-        <strong className="api-address">{apiBaseUrl}</strong>
+        <strong className="api-address">{apiLabel}</strong>
         <span>Configured at build time</span>
       </article>
     </section>
