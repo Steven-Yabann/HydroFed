@@ -11,9 +11,10 @@ COPY src ./src
 
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir . \
-    && useradd --create-home --uid 10001 hydrofed \
-    && mkdir /data \
-    && chown hydrofed:hydrofed /data
+    && useradd --create-home --shell /bin/sh --uid 10001 hydrofed \
+    && mkdir -p /data /home/hydrofed/.ssh \
+    && chown -R hydrofed:hydrofed /data /home/hydrofed/.ssh \
+    && chmod 0700 /home/hydrofed/.ssh
 
 USER hydrofed
 
