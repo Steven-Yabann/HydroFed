@@ -10,10 +10,12 @@ from hydrofed.data.pipeline import (
     generate_synthetic_telemetry,
     load_skab_csvs,
     partition_non_iid,
+    partition_stratified_iid,
     partition_temporal,
     partition_temporal_by_recording,
     prepare_dataframe,
     save_partitions,
+
 )
 
 p=argparse.ArgumentParser(); p.add_argument("--input"); p.add_argument("--output", default="data/partitions")
@@ -21,8 +23,14 @@ p.add_argument("--synthetic", action="store_true"); p.add_argument("--download",
 p.add_argument("--features", type=int, default=8); p.add_argument("--window", type=int, default=32)
 p.add_argument("--stride", type=int, default=4); p.add_argument("--clients", type=int, default=5)
 p.add_argument(
+    "--seed",
+    type=int,
+    default=42,
+    help="Random seed used by non-IID and balanced IID-like partitioning",
+)
+p.add_argument(
     "--partition-strategy",
-    choices=("temporal", "non-iid"),
+    choices=("temporal", "non-iid", "iid"),
     default="temporal",
 )
 p.add_argument(
@@ -68,7 +76,20 @@ else:
     )
 
 if a.partition_strategy == "non-iid" and a.minimum_anomalies:
-    p.error("--minimum-anomalies is only supported by temporal partitioning")
+    p.error(
+        "--minimum-anomalies is only supported by temporal or IID-like "
+        "partitioning"
+    )
+
+if a.partition_strategy == "iid":
+    required_anomalies = a.clients * a.minimum_anomalies
+
+    if int(y.sum()) < required_anomalies:
+        p.error(
+            f"Cannot give {a.clients} plants at least "
+            f"{a.minimum_anomalies} anomalies each: only {int(y.sum())} "
+            "anomalous windows exist"
+        )
 
 partition_kwargs = {"n_clients": a.clients}
 
@@ -86,9 +107,22 @@ if a.partition_strategy == "temporal":
             **partition_kwargs,
         )
         strategy_name = "recording-aware temporal"
+elif a.partition_strategy == "iid":
+    partitions = partition_stratified_iid(
+        x,
+        y,
+        n_clients=a.clients,
+        seed=a.seed,
+    )
+    strategy_name = "balanced IID-like"
 else:
-    partitions = partition_non_iid(x, y, **partition_kwargs)
-    strategy_name = "non-iid"
+    partitions = partition_non_iid(
+        x,
+        y,
+        n_clients=a.clients,
+        seed=a.seed,
+    )
+    strategy_name = "non-IID"
 
 path = save_partitions(partitions, a.output)
 
