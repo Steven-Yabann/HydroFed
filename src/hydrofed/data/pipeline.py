@@ -134,6 +134,49 @@ def partition_non_iid(windows: np.ndarray, labels: np.ndarray, n_clients: int = 
         result[f"plant_{i+1}"] = (windows[take], labels[take])
     return result
 
+def partition_stratified_iid(
+    windows: np.ndarray,
+    labels: np.ndarray,
+    n_clients: int = 5,
+    seed: int = 42,
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Split each label class evenly across simulated IID-like plants.
+
+    This is a diagnostic control partition. It reduces client-level label
+    imbalance, unlike the recording-aware temporal partition used to simulate
+    realistic non-IID plants.
+    """
+    if n_clients <= 0:
+        raise ValueError("n_clients must be positive")
+
+    if len(windows) != len(labels):
+        raise ValueError("windows and labels must have the same length")
+
+    rng = np.random.default_rng(seed)
+    client_indices = [[] for _ in range(n_clients)]
+
+    for label in np.unique(labels):
+        indices = np.flatnonzero(labels == label)
+        rng.shuffle(indices)
+
+        for client_index, chunk in enumerate(
+            np.array_split(indices, n_clients)
+        ):
+            client_indices[client_index].append(chunk)
+
+    partitions = {}
+
+    for client_index, chunks in enumerate(client_indices):
+        indices = np.concatenate(chunks)
+        rng.shuffle(indices)
+
+        partitions[f"plant_{client_index + 1}"] = (
+            windows[indices],
+            labels[indices],
+        )
+
+    return partitions
+
 def save_partitions(partitions: dict[str, tuple[np.ndarray, np.ndarray]], output: str | Path) -> Path:
     directory = Path(output); directory.mkdir(parents=True, exist_ok=True)
     summary = {}
