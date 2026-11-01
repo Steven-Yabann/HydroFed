@@ -14,11 +14,34 @@ def compute_metrics(labels: np.ndarray, scores: np.ndarray, threshold: float) ->
     else:
         auc_roc = float(roc_auc_score(labels, scores))
 
+    normal_scores = scores[labels == 0]
+    anomalous_scores = scores[labels != 0]
+
+    mean_normal_score = (
+        float(normal_scores.mean())
+        if len(normal_scores)
+        else None
+    )
+    mean_anomalous_score = (
+        float(anomalous_scores.mean())
+        if len(anomalous_scores)
+        else None
+    )
+    score_gap = (
+        mean_anomalous_score - mean_normal_score
+        if mean_normal_score is not None
+        and mean_anomalous_score is not None
+        else None
+    )
+
     return {
         "precision": float(precision),
         "recall": float(recall),
         "f1": float(f1),
         "auc_roc": auc_roc,
+        "mean_normal_score": mean_normal_score,
+        "mean_anomalous_score": mean_anomalous_score,
+        "score_gap": score_gap,
         "threshold": float(threshold),
     }
 

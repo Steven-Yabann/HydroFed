@@ -229,3 +229,40 @@ def test_preprocessing_can_clean_without_normalizing():
         clean["sensor"].to_numpy(),
         np.array([2.0, 2.0, 4.0]),
     )
+
+def test_stratified_iid_partition_balances_clients_and_preserves_windows():
+    windows = np.arange(50, dtype=np.float32).reshape(50, 1, 1)
+    labels = np.array([0] * 35 + [1] * 15, dtype=np.int64)
+
+    partitions = partition_stratified_iid(
+        windows,
+        labels,
+        n_clients=5,
+        seed=7,
+    )
+
+    client_sizes = [
+        len(client_windows)
+        for client_windows, _ in partitions.values()
+    ]
+    anomaly_counts = [
+        int(client_labels.sum())
+        for _, client_labels in partitions.values()
+    ]
+
+    assert client_sizes == [10, 10, 10, 10, 10]
+    assert anomaly_counts == [3, 3, 3, 3, 3]
+
+    recovered_window_ids = np.sort(
+        np.concatenate(
+            [
+                client_windows[:, 0, 0]
+                for client_windows, _ in partitions.values()
+            ]
+        )
+    )
+
+    np.testing.assert_array_equal(
+        recovered_window_ids,
+        np.arange(50, dtype=np.float32),
+    )
