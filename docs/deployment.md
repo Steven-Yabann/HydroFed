@@ -1,21 +1,42 @@
 # Deploying HydroFed
 
-## What is deployed
+## Overview
 
-The deployment contains two containers:
+HydroFed has been verified in two deployment modes:
 
-- `frontend`: an Nginx server hosting the production React build.
-- `api`: the FastAPI service that reads the SQLite experiment database.
+- **Local Docker Compose** for production-like development and testing.
+- **Render** for the public dashboard and API deployment.
 
-Nginx proxies browser requests from `/api/...` to the FastAPI container. This
-means a hosted browser page and its API share one origin, so the production
-frontend does not need to contain a hard-coded API URL.
+The system stores experiment runs and evaluation results in SQLite. SQLite is
+appropriate for the current single API instance, but the API must not be scaled
+to multiple replicas while it uses one database file.
 
-The named Docker volume `hydrofed-data` persists `/data/experiments.db` across
-container replacement. SQLite is appropriate for this single API instance. Do
-not scale the API to multiple replicas while it uses SQLite.
+## Architecture
 
-## Local production-like verification
+```text
+Browser
+  |
+  v
+Render Static Site
+https://hydrofed-dashboard.onrender.com
+  |
+  | HTTPS requests with CORS protection
+  v
+Render Web Service
+https://hydrofed.onrender.com
+  |
+  v
+Persistent disk mounted at /data
+  |
+  v
+/data/experiments.db
+```
+
+The frontend is a Vite/React static site. The API is a FastAPI Docker service.
+The persistent disk preserves saved experiment runs and evaluation metrics when
+the API restarts or redeploys.
+
+## Local Docker Compose verification
 
 From the repository root:
 
@@ -24,70 +45,116 @@ cp deployment.env.example deployment.env
 docker compose --env-file deployment.env -f docker-compose.deploy.yml up --build
 ```
 
-Open `http://localhost:8080` and verify that the dashboard reports `API
-connected`.
+Open `http://localhost:8080` and confirm that the dashboard reports
+`API connected`.
 
-In another terminal, run:
+Verify the API:
 
 ```bash
 curl http://localhost:8080/api/health
 ```
 
-The expected response is:
+Expected response:
 
 ```json
 {"status":"ok"}
 ```
 
-## Importing existing experiment history
+The local stack uses the `hydrofed-data` Docker volume to persist
+`/data/experiments.db`.
 
-The named Docker volume starts with a new SQLite database. To display results
-already stored in the local development database, start the deployment and
-then copy the database into the API container's persistent `/data` volume:
+## Render deployment
 
-docker compose --env-file deployment.env -f docker-compose.deploy.yml cp \
-  artifacts/experiments.db api:/data/experiments.db
+Render deploys HydroFed as two separate services.
 
-docker compose --env-file deployment.env -f docker-compose.deploy.yml \
-  exec --user root api \
-  chown hydrofed:hydrofed /data/experiments.db
+### API web service
 
-docker compose --env-file deployment.env -f docker-compose.deploy.yml \
-  restart api
-
-Refresh the dashboard after the API restarts. A new hosted database will show
-an empty dashboard until a database backup is imported or a future hosted
-training worker records a new experiment run.
-
-To stop the local deployment while retaining the database volume:
-
-```bash
-docker compose --env-file deployment.env -f docker-compose.deploy.yml down
+```text
+Service name: HydroFed
+Runtime: Docker
+Branch: feature/deployment
+Docker build context: .
+Dockerfile path: Dockerfile.api
+Health check path: /api/health
+Persistent disk mount path: /data
 ```
 
-To delete the deployment data as well, use `down --volumes`. Do this only when
-the persisted experiment database is no longer needed.
+API environment variables:
 
-## Hosting requirements
+```text
+HYDROFED_DB_PATH=/data/experiments.db
+HYDROFED_ALLOWED_ORIGINS=https://hydrofed-dashboard.onrender.com
+```
 
-Choose a platform that can run Docker containers and provide persistent disk
-storage. Configure these environment variables on the hosting platform:
+The API health endpoint is:
 
-| Variable | Value |
-| --- | --- |
-| `HYDROFED_DB_PATH` | `/data/experiments.db` |
-| `HYDROFED_ALLOWED_ORIGINS` | The public dashboard URL, for example `https://hydrofed.example` |
+```text
+https://hydrofed.onrender.com/api/health
+```
 
-Mount persistent storage at `/data`. The frontend should be publicly exposed;
-the API container should remain internal when Nginx proxies `/api` on the same
-host.
+### Frontend static site
 
-## Deployment smoke test
+```text
+Service name: hydrofed-dashboard
+Branch: feature/deployment
+Root directory: frontend
+Build command: npm ci && npm run build
+Publish directory: dist
+```
 
-1. Open the public dashboard URL.
-2. Confirm the API status indicator is connected.
-3. Select a completed federated run.
-4. If an experiment database was imported, confirm five plant evaluation rows
-   appear.
-5. Download the research CSV export.
-6. Restart the containers and confirm the selected run is still listed.
+Frontend build-time environment variable:
+
+```text
+VITE_API_BASE_URL=https://hydrofed.onrender.com
+```
+
+The public dashboard is:
+
+```text
+https://hydrofed-dashboard.onrender.com
+```
+
+## Importing experiment history
+
+A new Render disk starts with an empty SQLite database. Create a consistent
+local backup before uploading:
+
+```bash
+.venv/bin/python -c 'import sqlite3; source = sqlite3.connect("artifacts/experiments.db"); backup = sqlite3.connect("/tmp/hydrofed-render-backup.db"); source.backup(backup); backup.close(); source.close()'
+```
+
+Upload the backup with the SSH address shown in the Render service settings:
+
+```bash
+scp -s /tmp/hydrofed-render-backup.db \
+  <render-service>@ssh.<render-region>.render.com:/data/experiments.import.db
+```
+
+Then atomically replace the hosted database:
+
+```bash
+ssh <render-service>@ssh.<render-region>.render.com \
+  "mv /data/experiments.import.db /data/experiments.db"
+```
+
+Replace the angle-bracket placeholders with the actual Render SSH details.
+Using a temporary filename prevents a partially transferred file from becoming
+the active database.
+
+## Deployment verification
+
+The public deployment was verified by confirming that:
+
+1. The dashboard reports `API connected`.
+2. A saved federated run is selectable.
+3. Five plant evaluation results are displayed.
+4. The same run remains visible after restarting the Render API service.
+
+## Current limitations
+
+- The dashboard is read-only; training is started from the command line.
+- Role workspaces are interface views and do not yet enforce authentication or
+  role-based authorization.
+- SQLite supports one API instance only.
+- Long-running GPU experiments should run in Google Colab or Modal, then save
+  results for dashboard display.
