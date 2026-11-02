@@ -30,7 +30,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument("weights")
 parser.add_argument("--partitions", default="data/partitions_skab")
 parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
-parser.add_argument("--train-size", type=int, default=400)
+parser.add_argument("--train-size", type=int)
+parser.add_argument(
+    "--training-policy",
+    choices=("auto", "chronological", "normal-only"),
+    default="auto",
+    help="Reuse the checkpoint policy or explicitly choose its SKAB training selection",
+)
 parser.add_argument("--threshold-percentile", type=float, default=99.0)
 parser.add_argument("--threshold-scale", type=float, default=1.5)
 parser.add_argument("--persistence", type=int, default=10)
@@ -55,6 +61,16 @@ if args.persistence <= 0:
 
 checkpoint = load_global_checkpoint(args.weights)
 preprocessing = checkpoint.get("preprocessing", {})
+train_size = (
+    args.train_size
+    if args.train_size is not None
+    else int(preprocessing.get("skab_train_size", 400))
+)
+training_policy = (
+    preprocessing.get("skab_training_policy", "chronological")
+    if args.training_policy == "auto"
+    else args.training_policy
+)
 
 if preprocessing.get("scaler") != "shared_skab_train_standard":
     raise SystemExit(
@@ -96,7 +112,9 @@ for file in files:
         metadata["endpoint_labels"],
         metadata["recording_ids"],
         metadata["window_start_indices"],
-        train_size=args.train_size,
+        train_size=train_size,
+        window_labels=window_labels,
+        training_policy=training_policy,
     )
     plant_split = scale_plant_split(plant_split, scaler)
     train_scores = reconstruction_absolute_errors(
@@ -134,7 +152,13 @@ for file in files:
         ends = metadata["window_start_indices"] + windows.shape[1] - 1
         train_indices = np.concatenate([
             np.flatnonzero(
-                (metadata["recording_ids"] == recording_id) & (ends < args.train_size)
+                (metadata["recording_ids"] == recording_id)
+                & (ends < train_size)
+                & (
+                    (window_labels == 0)
+                    if training_policy == "normal-only"
+                    else np.ones(len(window_labels), dtype=bool)
+                )
             )
             for recording_id in dict.fromkeys(metadata["recording_ids"].tolist())
         ])
@@ -179,7 +203,8 @@ if args.recording_report:
     report = {
         "checkpoint": str(Path(args.weights)),
         "partitions": str(Path(args.partitions)),
-        "train_size": args.train_size,
+        "train_size": train_size,
+        "training_policy": training_policy,
         "policy": summary["policy"],
         "notes": [
             "Training labels are audited only; they do not change training or thresholds.",

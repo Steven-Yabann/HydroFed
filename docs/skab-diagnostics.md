@@ -16,9 +16,11 @@ boundary as the saved model:
 ```
 
 Use `--device cpu` when MPS is unavailable. Add `--plant plant_1` to inspect
-just that plant. `--train-size` defaults to 400 observations per recording;
-it must match the original training split. `--output` can additionally save
-the existing plant-level evaluation JSON.
+just that plant. By default, the evaluator reuses the checkpoint's training
+boundary and training policy. Older checkpoints without this metadata use 400
+observations per recording and the chronological policy. `--train-size` and
+`--training-policy` can override those values for a deliberate comparison.
+`--output` can additionally save the existing plant-level evaluation JSON.
 
 The evaluator uses the scaler stored in the checkpoint and computes each
 training/test score once. This report does not retrain the model, filter any
@@ -60,3 +62,39 @@ Counts refer to overlapping windows or sequence endpoints, not distinct fault
 events or independent samples. Repeatedly selecting a policy using these test
 labels makes this a development analysis; use separate validation data for
 future choices and reserve an untouched final evaluation.
+
+## Clean-training experiment
+
+The LSTM autoencoder learns normal behaviour by reconstructing its training
+sequences. If a sequence already contains a labelled fault, training the model
+to reconstruct it works against that objective. Run the controlled
+`normal-only` experiment with:
+
+```bash
+.venv/bin/python scripts/run_experiment.py \
+  --partitions data/partitions_skab \
+  --rounds 20 \
+  --epochs 5 \
+  --batch-size 64 \
+  --learning-rate 0.001 \
+  --hidden-size 64 \
+  --latent-size 16 \
+  --num-layers 2 \
+  --dropout 0.1 \
+  --device mps \
+  --seed 42 \
+  --evaluate \
+  --evaluation-protocol skab \
+  --skab-training-policy normal-only \
+  --skab-threshold-percentile 90 \
+  --skab-threshold-scale 1.0 \
+  --skab-persistence 1 \
+  --skab-threshold-scope recording \
+  --db artifacts/skab_runs/clean_100epoch_seed42.db \
+  --output artifacts/skab_runs/clean_100epoch_seed42.pt
+```
+
+Only labelled anomalous windows inside each recording's training region are
+excluded. The chronological boundary and held-out test data do not change.
+This is a label-assisted experiment: in a real plant, the equivalent input
+would be a trusted fault-free commissioning period rather than test labels.

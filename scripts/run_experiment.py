@@ -64,6 +64,12 @@ p.add_argument("--skab-threshold-percentile", type=float, default=99.0)
 p.add_argument("--skab-threshold-scale", type=float, default=1.5)
 p.add_argument("--skab-persistence", type=int, default=10)
 p.add_argument(
+    "--skab-training-policy",
+    choices=("chronological", "normal-only"),
+    default="chronological",
+    help="Use every early SKAB window or retain only label-confirmed normal windows",
+)
+p.add_argument(
     "--skab-threshold-scope",
     choices=("plant", "recording"),
     default="plant",
@@ -120,6 +126,8 @@ def build_plant_split(file):
         metadata["recording_ids"],
         metadata["window_start_indices"],
         train_size=a.skab_train_size,
+        window_labels=labels,
+        training_policy=a.skab_training_policy,
     )
 
 
@@ -162,6 +170,7 @@ run_id = run_store.create_run(
         "skab_threshold_scale": a.skab_threshold_scale,
         "skab_persistence": a.skab_persistence,
         "skab_threshold_scope": a.skab_threshold_scope,
+        "skab_training_policy": a.skab_training_policy,
     },
 )
 
@@ -182,6 +191,7 @@ try:
             scaler=shared_scaler,
             evaluation_protocol=a.evaluation_protocol,
             skab_train_size=a.skab_train_size,
+            skab_training_policy=a.skab_training_policy,
             model_config=model_config,
         ).to_client()
 
@@ -222,6 +232,8 @@ try:
                 {
                     "means": shared_scaler.means,
                     "standard_deviations": shared_scaler.standard_deviations,
+                    "skab_train_size": a.skab_train_size,
+                    "skab_training_policy": a.skab_training_policy,
                 }
                 if a.evaluation_protocol == "skab"
                 else {

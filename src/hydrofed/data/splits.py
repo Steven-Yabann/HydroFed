@@ -77,6 +77,8 @@ def split_skab_plant_windows(
     recording_ids: np.ndarray,
     window_start_indices: np.ndarray,
     train_size: int = 400,
+    window_labels: np.ndarray | None = None,
+    training_policy: str = "chronological",
 ) -> PlantDataSplit:
     """Create SKAB-style chronological train and point-aligned test windows.
 
@@ -90,6 +92,12 @@ def split_skab_plant_windows(
         raise ValueError("SKAB window metadata must align with windows")
     if train_size <= 0:
         raise ValueError("train_size must be positive")
+    if training_policy not in {"chronological", "normal-only"}:
+        raise ValueError("training_policy must be 'chronological' or 'normal-only'")
+    if window_labels is not None and len(window_labels) != len(windows):
+        raise ValueError("window_labels must align with windows")
+    if training_policy == "normal-only" and window_labels is None:
+        raise ValueError("normal-only training requires window_labels")
 
     train_sets = []
     test_sets = []
@@ -103,14 +111,19 @@ def split_skab_plant_windows(
         ends = starts + windows.shape[1] - 1
         recording_windows = windows[mask]
         recording_labels = endpoint_labels[mask]
+        recording_window_labels = (
+            np.asarray(window_labels)[mask] if window_labels is not None else None
+        )
 
         train_mask = ends < train_size
+        if training_policy == "normal-only":
+            train_mask &= recording_window_labels == 0
         test_mask = starts >= train_size
 
         if train_mask.any():
-            # SKAB's chronological training section is used without looking at
-            # its labels. In the benchmark recordings this is the pre-fault
-            # operating period.
+            # Chronological mode preserves the original time boundary. The
+            # normal-only policy additionally enforces the autoencoder's
+            # clean-baseline assumption inside that training region.
             train_sets.append(recording_windows[train_mask])
             train_recording_sets.append(
                 np.repeat(str(recording_id), train_mask.sum())
