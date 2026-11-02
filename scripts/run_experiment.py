@@ -41,7 +41,7 @@ p.add_argument("--keep-metrics-seconds", type=int, default=0)
 p.add_argument("--output", default="artifacts/federated/global_model.pt")
 p.add_argument("--evaluate", action="store_true")
 p.add_argument("--threshold-percentile", type=float, default=95.0)
-p.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+p.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
 p.add_argument("--seed", type=int, default=42)
 p.add_argument(
     "--evaluation-protocol",
