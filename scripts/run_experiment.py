@@ -16,6 +16,10 @@ from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.monitoring import serve, F1
 from hydrofed.federation.checkpoint import save_global_checkpoint
 from hydrofed.data.splits import split_plant_windows
+from hydrofed.data.scaling import (
+    fit_shared_window_scaler,
+    scale_plant_split,
+)
 from hydrofed.runtime import resolve_device
 from hydrofed.reproducibility import set_random_seed
 
@@ -43,6 +47,16 @@ if not files:
 
 n_features=load_client_partition(files[0])[0].shape[2]\
 
+raw_plant_splits = {}
+for file in files:
+    windows, labels = load_client_partition(file)
+    raw_plant_splits[file] = split_plant_windows(windows, labels)
+
+shared_scaler = fit_shared_window_scaler(
+    plant_split.train_windows
+    for plant_split in raw_plant_splits.values()
+)
+
 run_store = ExperimentStore(a.db)
 run_id = run_store.create_run(
     "federated",
@@ -55,6 +69,7 @@ run_id = run_store.create_run(
         "seed": a.seed,
         "evaluate": a.evaluate,
         "threshold_percentile": a.threshold_percentile,
+        "scaling": "shared_normal_train_minmax",
     },
 )
 
@@ -70,6 +85,7 @@ try:
             epochs=a.epochs,
             device=device,
             seed=a.seed + int(cid),
+            scaler=shared_scaler,
         ).to_client()
 
     strategy = TrackingFedAvg(
@@ -102,6 +118,11 @@ try:
         final_parameters,
         n_features,
         a.output,
+        preprocessing={
+            "scaler": "shared_normal_train_minmax",
+            "minimums": shared_scaler.minimums,
+            "spans": shared_scaler.spans,
+        },
     )
 
     print(f"Saved final global model: {checkpoint_path}")
@@ -113,8 +134,10 @@ try:
         evaluation_results = {}
 
         for file in files:
-            windows, labels = load_client_partition(file)
-            plant_split = split_plant_windows(windows, labels)
+            plant_split = scale_plant_split(
+                raw_plant_splits[file],
+                shared_scaler,
+            )
 
             calibration_errors = reconstruction_errors(
                 global_model,

@@ -5,6 +5,7 @@ from hydrofed.federation.checkpoint import save_global_checkpoint
 from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.federation.client import HydroFedClient
 from hydrofed.data.pipeline import save_partitions
+from hydrofed.data.scaling import WindowMinMaxScaler
 from flwr.common import ndarrays_to_parameters
 from hydrofed.federation.strategy import TrackingFedAvg
 
@@ -26,6 +27,25 @@ def test_client_fit_and_evaluate_contract(tmp_path):
     loss,evaluated,evaluation_metrics=client.evaluate(updated,{})
     assert count==7 and len(updated)==len(parameters) and metrics["client_id"]=="plant_1"
     assert evaluated==3 and loss>=0 and evaluation_metrics["local_loss"]==loss
+
+
+def test_client_applies_supplied_shared_scaler_to_every_split(tmp_path):
+    windows = np.arange(12, dtype=np.float32).reshape(12, 1, 1)
+    labels = np.array([0] * 9 + [1] * 3, dtype=np.int64)
+    save_partitions({"plant_1": (windows, labels)}, tmp_path)
+    scaler = WindowMinMaxScaler.fit(np.array([[[0.0], [10.0]]], dtype=np.float32))
+
+    client = HydroFedClient(
+        "plant_1",
+        tmp_path / "plant_1.npz",
+        {"hidden_size": 4, "latent_size": 2, "num_layers": 1, "dropout": 0},
+        batch_size=4,
+        device="cpu",
+        scaler=scaler,
+    )
+
+    assert client.plant_split.train_windows.max() <= 0.7
+    assert client.plant_split.test_windows.max() > 1.0
 
 def test_strategy_exposes_latest_global_parameters(tmp_path):
     initial = ndarrays_to_parameters(
@@ -59,6 +79,7 @@ def test_global_checkpoint_round_trips_model_weights(tmp_path):
         n_features=2,
         output_path=tmp_path / "global_model.pt",
         model_config=config,
+        preprocessing={"scaler": "shared_normal_train_minmax"},
     )
 
     saved = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
@@ -68,6 +89,8 @@ def test_global_checkpoint_round_trips_model_weights(tmp_path):
         model_config=saved["model_config"],
     )
     restored.load_state_dict(saved["state_dict"])
+
+    assert saved["preprocessing"] == {"scaler": "shared_normal_train_minmax"}
 
     for expected, actual in zip(original.parameters(), restored.parameters()):
         assert torch.allclose(expected, actual)
