@@ -6,6 +6,7 @@ from hydrofed.data.pipeline import (
     create_windows,
     create_windows_by_recording,
     create_windows_with_recording_ids,
+    create_windows_with_endpoint_metadata,
     download_skab,
     generate_synthetic_telemetry,
     load_skab_csvs,
@@ -61,9 +62,10 @@ frame, columns = prepare_dataframe(frame, normalize=False); label = frame["anoma
 features = frame[columns].to_numpy()
 
 window_recording_ids = None
+window_metadata = None
 
 if "_recording_id" in frame:
-    x, y, window_recording_ids = create_windows_with_recording_ids(
+    x, y, window_recording_ids, window_metadata = create_windows_with_endpoint_metadata(
         features,
         label,
         frame["_recording_id"].to_numpy(),
@@ -127,7 +129,26 @@ else:
     )
     strategy_name = "non-IID"
 
-path = save_partitions(partitions, a.output)
+partition_metadata = None
+
+# Recording-aware temporal partitions preserve the original window order, so
+# provenance arrays can be sliced alongside the resulting client windows.
+# Randomised IID/non-IID controls intentionally omit SKAB provenance because
+# their shuffled windows no longer represent chronological recordings.
+if window_recording_ids is not None and a.partition_strategy == "temporal":
+    partition_metadata = {}
+    cursor = 0
+
+    for client_id, (client_windows, _) in partitions.items():
+        next_cursor = cursor + len(client_windows)
+        partition_metadata[client_id] = {
+            "recording_ids": window_recording_ids[cursor:next_cursor],
+            "endpoint_labels": window_metadata["endpoint_labels"][cursor:next_cursor],
+            "window_start_indices": window_metadata["window_start_indices"][cursor:next_cursor],
+        }
+        cursor = next_cursor
+
+path = save_partitions(partitions, a.output, metadata=partition_metadata)
 
 print(
     f"Saved {len(x)} windows across {a.clients} clients "

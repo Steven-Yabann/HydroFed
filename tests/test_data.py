@@ -1,7 +1,7 @@
 import json
 import numpy as np
 from hydrofed.data.pipeline import *
-from hydrofed.data.splits import split_plant_windows
+from hydrofed.data.splits import split_plant_windows, split_skab_plant_windows
 
 def test_preprocessing_fills_and_scales():
     frame=generate_synthetic_telemetry(50,3); frame.loc[2,"sensor_1"]=np.nan
@@ -72,6 +72,32 @@ def test_plant_split_keeps_train_calibration_and_test_disjoint():
         split.test_labels,
         np.array([0, 1, 0]),
     )
+
+
+def test_skab_split_uses_chronological_recording_boundaries():
+    windows = np.arange(12, dtype=np.float32).reshape(12, 1, 1)
+    endpoint_labels = np.array([0, 0, 0, 1, 0, 1] * 2, dtype=np.int64)
+    recording_ids = np.array(["a"] * 6 + ["b"] * 6)
+    starts = np.array([0, 1, 2, 3, 4, 5] * 2, dtype=np.int64)
+
+    split = split_skab_plant_windows(
+        windows,
+        endpoint_labels,
+        recording_ids,
+        starts,
+        train_size=4,
+    )
+
+    np.testing.assert_array_equal(
+        split.train_windows[:, 0, 0],
+        np.array([0, 1, 2, 3, 6, 7, 8, 9], dtype=np.float32),
+    )
+    np.testing.assert_array_equal(
+        split.test_windows[:, 0, 0],
+        np.array([4, 5, 10, 11], dtype=np.float32),
+    )
+    np.testing.assert_array_equal(split.test_labels, np.array([0, 1, 0, 1]))
+    assert split.test_recording_ids.tolist() == ["a", "a", "b", "b"]
 
 def test_windows_do_not_cross_recording_boundaries():
     features = np.array(
@@ -186,6 +212,58 @@ def test_windows_keep_their_source_recording_id():
         "recording_b",
         "recording_b",
     ]
+
+
+def test_windows_keep_endpoint_labels_and_start_indices():
+    features = np.arange(10, dtype=np.float32).reshape(10, 1)
+    labels = np.array([0, 0, 1, 0, 0, 1, 0, 0, 0, 1])
+    recording_ids = np.array(["recording_a"] * 5 + ["recording_b"] * 5)
+
+    _, _, window_recording_ids, metadata = create_windows_with_endpoint_metadata(
+        features,
+        labels,
+        recording_ids,
+        window_length=3,
+        stride=1,
+    )
+
+    assert window_recording_ids.tolist() == [
+        "recording_a",
+        "recording_a",
+        "recording_a",
+        "recording_b",
+        "recording_b",
+        "recording_b",
+    ]
+    np.testing.assert_array_equal(
+        metadata["endpoint_labels"],
+        np.array([1, 0, 0, 0, 0, 1]),
+    )
+    np.testing.assert_array_equal(
+        metadata["window_start_indices"],
+        np.array([0, 1, 2, 0, 1, 2]),
+    )
+
+
+def test_saved_partition_can_load_window_provenance(tmp_path):
+    windows = np.ones((2, 3, 1), dtype=np.float32)
+    labels = np.array([0, 1], dtype=np.int64)
+    save_partitions(
+        {"plant_1": (windows, labels)},
+        tmp_path,
+        metadata={
+            "plant_1": {
+                "recording_ids": np.array(["a", "a"]),
+                "endpoint_labels": labels,
+                "window_start_indices": np.array([0, 1]),
+            }
+        },
+    )
+
+    metadata = load_client_partition_metadata(tmp_path / "plant_1.npz")
+
+    assert metadata["recording_ids"].tolist() == ["a", "a"]
+    np.testing.assert_array_equal(metadata["endpoint_labels"], labels)
 
 def test_recording_aware_partition_does_not_split_recordings():
     windows = np.arange(12, dtype=np.float32).reshape(12, 1, 1)
