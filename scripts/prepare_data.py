@@ -53,7 +53,10 @@ if a.download:
             "Check your network, or clone https://github.com/waico/SKAB into the input directory."
         )
 frame = generate_synthetic_telemetry(a.rows, a.features) if a.synthetic else load_skab_csvs(a.input)
-frame, columns = prepare_dataframe(frame); label = frame["anomaly"].to_numpy() if "anomaly" in frame else np.zeros(len(frame))
+# Cleaning missing values is safe before splitting. Scaling is intentionally
+# deferred until the training/calibration/test split so held-out data cannot
+# influence the feature statistics.
+frame, columns = prepare_dataframe(frame, normalize=False); label = frame["anomaly"].to_numpy() if "anomaly" in frame else np.zeros(len(frame))
 
 features = frame[columns].to_numpy()
 

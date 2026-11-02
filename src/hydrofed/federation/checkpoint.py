@@ -15,6 +15,7 @@ def save_global_checkpoint(
     n_features: int,
     output_path: str | Path,
     model_config: dict | None = None,
+    preprocessing: dict | None = None,
 ) -> Path:
     """Convert final Flower parameters into a saved PyTorch model checkpoint."""
 
@@ -29,6 +30,7 @@ def save_global_checkpoint(
             "state_dict": model.state_dict(),
             "n_features": n_features,
             "model_config": model_config or {},
+            "preprocessing": preprocessing or {},
         },
         path,
     )

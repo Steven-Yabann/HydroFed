@@ -8,6 +8,10 @@ from hydrofed.training.local import train_epochs, reconstruction_errors, calibra
 from hydrofed.evaluation import evaluate_model
 from hydrofed.storage import ExperimentStore
 from hydrofed.data.splits import split_plant_windows
+from hydrofed.data.scaling import (
+    fit_shared_window_scaler,
+    scale_plant_split,
+)
 from hydrofed.runtime import resolve_device
 from hydrofed.reproducibility import set_random_seed
 
@@ -42,11 +46,24 @@ def train_baselines(
         )
 
     try:
+        raw_plant_splits = []
+
         for file in sorted(Path(partition_dir).glob("plant_*.npz")):
             windows, labels = load_client_partition(file)
-            plant_split = split_plant_windows(windows, labels)
+            raw_plant_splits.append((file, split_plant_windows(windows, labels)))
 
-            model = build_model(windows.shape[2], model_config)
+        if not raw_plant_splits:
+            raise ValueError("No plant partitions found")
+
+        scaler = fit_shared_window_scaler(
+            plant_split.train_windows
+            for _, plant_split in raw_plant_splits
+        )
+
+        for file, raw_plant_split in raw_plant_splits:
+            plant_split = scale_plant_split(raw_plant_split, scaler)
+
+            model = build_model(plant_split.train_windows.shape[2], model_config)
 
             loss = train_epochs(
                 model,
@@ -75,8 +92,13 @@ def train_baselines(
             torch.save(
                 {
                     "state_dict": model.state_dict(),
-                    "n_features": windows.shape[2],
+                    "n_features": plant_split.train_windows.shape[2],
                     "threshold": threshold,
+                    "preprocessing": {
+                        "scaler": "shared_normal_train_minmax",
+                        "minimums": scaler.minimums,
+                        "spans": scaler.spans,
+                    },
                 },
                 output / f"{file.stem}.pt",
             )
