@@ -15,6 +15,7 @@ class PlantDataSplit:
     calibration_windows: np.ndarray
     test_windows: np.ndarray
     test_labels: np.ndarray
+    train_recording_ids: np.ndarray | None = None
     test_recording_ids: np.ndarray | None = None
 
 
@@ -93,6 +94,7 @@ def split_skab_plant_windows(
     train_sets = []
     test_sets = []
     label_sets = []
+    train_recording_sets = []
     test_recording_sets = []
 
     for recording_id in dict.fromkeys(recording_ids.tolist()):
@@ -110,6 +112,9 @@ def split_skab_plant_windows(
             # its labels. In the benchmark recordings this is the pre-fault
             # operating period.
             train_sets.append(recording_windows[train_mask])
+            train_recording_sets.append(
+                np.repeat(str(recording_id), train_mask.sum())
+            )
 
         if test_mask.any():
             test_sets.append(recording_windows[test_mask])
@@ -131,5 +136,6 @@ def split_skab_plant_windows(
         calibration_windows=train_windows,
         test_windows=np.concatenate(test_sets),
         test_labels=np.concatenate(label_sets),
+        train_recording_ids=np.concatenate(train_recording_sets),
         test_recording_ids=np.concatenate(test_recording_sets),
     )

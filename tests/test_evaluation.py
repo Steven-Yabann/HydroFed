@@ -1,5 +1,9 @@
 import numpy as np
-from hydrofed.evaluation import compute_metrics, persistent_predictions
+from hydrofed.evaluation import (
+    calibrate_recording_thresholds,
+    compute_metrics,
+    persistent_predictions,
+)
 from hydrofed.training.local import calibrate_threshold
 
 def test_metrics_perfect_separation():
@@ -64,3 +68,24 @@ def test_compute_metrics_accepts_persistence_predictions():
 
     assert result["precision"] == 1.0
     assert result["recall"] == 0.5
+
+
+def test_recording_thresholds_calibrate_each_normal_section_separately():
+    thresholds = calibrate_recording_thresholds(
+        scores=np.array([1.0, 3.0, 10.0, 30.0]),
+        recording_ids=np.array(["a", "a", "b", "b"]),
+        percentile=50,
+    )
+
+    assert thresholds == {"a": 2.0, "b": 20.0}
+
+
+def test_persistent_predictions_accept_recording_specific_thresholds():
+    predicted = persistent_predictions(
+        scores=np.array([2.5, 19.0, 21.0]),
+        threshold={"a": 2.0, "b": 20.0},
+        recording_ids=np.array(["a", "b", "b"]),
+        consecutive_sequences=1,
+    )
+
+    np.testing.assert_array_equal(predicted, np.array([1, 0, 1]))

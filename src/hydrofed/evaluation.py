@@ -1,5 +1,6 @@
 """Anomaly metrics and model evaluation."""
 from __future__ import annotations
+from collections.abc import Mapping
 import numpy as np
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
 from hydrofed.training.local import (
@@ -65,7 +66,7 @@ def evaluate_model(model, windows, labels, threshold, device: str = "cpu"):
 
 def persistent_predictions(
     scores: np.ndarray,
-    threshold: float,
+    threshold: float | Mapping[str, float],
     recording_ids: np.ndarray,
     consecutive_sequences: int = 10,
 ) -> np.ndarray:
@@ -82,10 +83,19 @@ def persistent_predictions(
 
     for recording_id in dict.fromkeys(recording_ids.tolist()):
         indices = np.flatnonzero(recording_ids == recording_id)
+        if isinstance(threshold, Mapping):
+            try:
+                recording_threshold = threshold[str(recording_id)]
+            except KeyError as error:
+                raise ValueError(
+                    f"No threshold is available for recording {recording_id!r}"
+                ) from error
+        else:
+            recording_threshold = threshold
         run_length = 0
 
         for index in indices:
-            if scores[index] > threshold:
+            if scores[index] > recording_threshold:
                 run_length += 1
                 if run_length >= consecutive_sequences:
                     predicted[index] = 1
@@ -95,12 +105,39 @@ def persistent_predictions(
     return predicted
 
 
+def calibrate_recording_thresholds(
+    scores: np.ndarray,
+    recording_ids: np.ndarray,
+    percentile: float,
+    scale: float = 1.0,
+) -> dict[str, float]:
+    """Calibrate one anomaly threshold from each recording's normal section."""
+    scores = np.asarray(scores, dtype=float)
+    recording_ids = np.asarray(recording_ids)
+
+    if len(scores) != len(recording_ids):
+        raise ValueError("scores and recording_ids must have the same length")
+    if len(scores) == 0:
+        raise ValueError("scores cannot be empty")
+    if not 0 <= percentile <= 100:
+        raise ValueError("percentile must be between 0 and 100")
+    if scale <= 0:
+        raise ValueError("scale must be positive")
+
+    return {
+        str(recording_id): float(
+            np.percentile(scores[recording_ids == recording_id], percentile) * scale
+        )
+        for recording_id in dict.fromkeys(recording_ids.tolist())
+    }
+
+
 def evaluate_skab_model(
     model,
     windows: np.ndarray,
     endpoint_labels: np.ndarray,
     recording_ids: np.ndarray,
-    threshold: float,
+    threshold: float | Mapping[str, float],
     consecutive_sequences: int = 10,
     device: str = "cpu",
 ) -> dict[str, float | None]:
@@ -112,7 +149,20 @@ def evaluate_skab_model(
         recording_ids,
         consecutive_sequences,
     )
-    return compute_metrics(endpoint_labels, scores, threshold, predicted) | {
+    if isinstance(threshold, Mapping):
+        threshold_values = np.asarray(list(threshold.values()), dtype=float)
+        reported_threshold = float(threshold_values.mean())
+        threshold_details = {
+            "threshold_mode": "per_recording",
+            "threshold_min": float(threshold_values.min()),
+            "threshold_max": float(threshold_values.max()),
+        }
+    else:
+        reported_threshold = float(threshold)
+        threshold_details = {"threshold_mode": "per_plant"}
+
+    return compute_metrics(endpoint_labels, scores, reported_threshold, predicted) | {
         "mean_anomaly_score": float(scores.mean()),
         "consecutive_sequences": int(consecutive_sequences),
+        **threshold_details,
     }

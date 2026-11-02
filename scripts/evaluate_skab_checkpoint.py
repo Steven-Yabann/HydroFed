@@ -15,7 +15,7 @@ from hydrofed.data.pipeline import (
 )
 from hydrofed.data.scaling import WindowStandardScaler, scale_plant_split
 from hydrofed.data.splits import split_skab_plant_windows
-from hydrofed.evaluation import evaluate_skab_model
+from hydrofed.evaluation import calibrate_recording_thresholds, evaluate_skab_model
 from hydrofed.federation.checkpoint import load_global_checkpoint
 from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.runtime import resolve_device
@@ -33,6 +33,12 @@ parser.add_argument("--train-size", type=int, default=400)
 parser.add_argument("--threshold-percentile", type=float, default=99.0)
 parser.add_argument("--threshold-scale", type=float, default=1.5)
 parser.add_argument("--persistence", type=int, default=10)
+parser.add_argument(
+    "--threshold-scope",
+    choices=("plant", "recording"),
+    default="plant",
+    help="Calibrate one threshold per plant or per SKAB recording",
+)
 parser.add_argument("--output", help="Optional JSON file for the policy result")
 args = parser.parse_args()
 
@@ -89,10 +95,18 @@ for file in files:
         plant_split.train_windows,
         device=device,
     )
-    threshold = calibrate_threshold(
-        train_scores,
-        args.threshold_percentile,
-    ) * args.threshold_scale
+    if args.threshold_scope == "recording":
+        threshold = calibrate_recording_thresholds(
+            train_scores,
+            plant_split.train_recording_ids,
+            args.threshold_percentile,
+            args.threshold_scale,
+        )
+    else:
+        threshold = calibrate_threshold(
+            train_scores,
+            args.threshold_percentile,
+        ) * args.threshold_scale
     results[file.stem] = evaluate_skab_model(
         model,
         plant_split.test_windows,
@@ -114,6 +128,7 @@ summary = {
         "threshold_percentile": args.threshold_percentile,
         "threshold_scale": args.threshold_scale,
         "persistence": args.persistence,
+        "threshold_scope": args.threshold_scope,
     },
     "macro_f1": macro_f1,
     "macro_auc_roc": float(np.mean(auc_values)) if auc_values else None,

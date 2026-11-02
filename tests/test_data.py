@@ -97,6 +97,7 @@ def test_skab_split_uses_chronological_recording_boundaries():
         np.array([4, 5, 10, 11], dtype=np.float32),
     )
     np.testing.assert_array_equal(split.test_labels, np.array([0, 1, 0, 1]))
+    assert split.train_recording_ids.tolist() == ["a", "a", "a", "a", "b", "b", "b", "b"]
     assert split.test_recording_ids.tolist() == ["a", "a", "b", "b"]
 
 def test_windows_do_not_cross_recording_boundaries():

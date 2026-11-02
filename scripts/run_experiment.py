@@ -5,7 +5,11 @@ from pathlib import Path
 import flwr as fl
 import json
 
-from hydrofed.evaluation import evaluate_model, evaluate_skab_model
+from hydrofed.evaluation import (
+    calibrate_recording_thresholds,
+    evaluate_model,
+    evaluate_skab_model,
+)
 from hydrofed.storage import ExperimentStore
 from hydrofed.training.local import (
     calibrate_threshold,
@@ -53,6 +57,12 @@ p.add_argument("--skab-train-size", type=int, default=400)
 p.add_argument("--skab-threshold-percentile", type=float, default=99.0)
 p.add_argument("--skab-threshold-scale", type=float, default=1.5)
 p.add_argument("--skab-persistence", type=int, default=10)
+p.add_argument(
+    "--skab-threshold-scope",
+    choices=("plant", "recording"),
+    default="plant",
+    help="Calibrate one SKAB threshold per plant or per recording",
+)
 
 a=p.parse_args(); files=sorted(Path(a.partitions).glob("plant_*.npz"))
 
@@ -128,6 +138,7 @@ run_id = run_store.create_run(
         "skab_threshold_percentile": a.skab_threshold_percentile,
         "skab_threshold_scale": a.skab_threshold_scale,
         "skab_persistence": a.skab_persistence,
+        "skab_threshold_scope": a.skab_threshold_scope,
     },
 )
 
@@ -214,10 +225,18 @@ try:
                     plant_split.train_windows,
                     device=device,
                 )
-                threshold = calibrate_threshold(
-                    train_scores,
-                    a.skab_threshold_percentile,
-                ) * a.skab_threshold_scale
+                if a.skab_threshold_scope == "recording":
+                    threshold = calibrate_recording_thresholds(
+                        train_scores,
+                        plant_split.train_recording_ids,
+                        a.skab_threshold_percentile,
+                        a.skab_threshold_scale,
+                    )
+                else:
+                    threshold = calibrate_threshold(
+                        train_scores,
+                        a.skab_threshold_percentile,
+                    ) * a.skab_threshold_scale
                 metrics = evaluate_skab_model(
                     global_model,
                     plant_split.test_windows,

@@ -127,5 +127,6 @@ def scale_plant_split(
         calibration_windows=scaler.transform(plant_split.calibration_windows),
         test_windows=scaler.transform(plant_split.test_windows),
         test_labels=plant_split.test_labels,
+        train_recording_ids=plant_split.train_recording_ids,
         test_recording_ids=plant_split.test_recording_ids,
     )

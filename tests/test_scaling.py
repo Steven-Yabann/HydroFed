@@ -73,6 +73,8 @@ def test_scale_plant_split_uses_the_same_training_scaler_for_held_out_data():
         calibration_windows=np.array([[[5.0], [10.0]]], dtype=np.float32),
         test_windows=np.array([[[15.0], [20.0]]], dtype=np.float32),
         test_labels=np.array([0], dtype=np.int64),
+        train_recording_ids=np.array(["recording_a"]),
+        test_recording_ids=np.array(["recording_b"]),
     )
 
     scaled = scale_plant_split(split, scaler)
@@ -80,3 +82,5 @@ def test_scale_plant_split_uses_the_same_training_scaler_for_held_out_data():
     np.testing.assert_allclose(scaled.calibration_windows, [[[0.5], [1.0]]])
     np.testing.assert_allclose(scaled.test_windows, [[[1.5], [2.0]]])
     np.testing.assert_array_equal(scaled.test_labels, split.test_labels)
+    np.testing.assert_array_equal(scaled.train_recording_ids, split.train_recording_ids)
+    np.testing.assert_array_equal(scaled.test_recording_ids, split.test_recording_ids)
