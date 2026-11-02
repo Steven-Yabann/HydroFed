@@ -15,7 +15,8 @@ from hydrofed.data.pipeline import (
 )
 from hydrofed.data.scaling import WindowStandardScaler, scale_plant_split
 from hydrofed.data.splits import split_skab_plant_windows
-from hydrofed.evaluation import calibrate_recording_thresholds, evaluate_skab_model
+from hydrofed.diagnostics import recording_diagnostics
+from hydrofed.evaluation import calibrate_recording_thresholds, evaluate_skab_scores
 from hydrofed.federation.checkpoint import load_global_checkpoint
 from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.runtime import resolve_device
@@ -40,6 +41,11 @@ parser.add_argument(
     help="Calibrate one threshold per plant or per SKAB recording",
 )
 parser.add_argument("--output", help="Optional JSON file for the policy result")
+parser.add_argument("--plant", help="Evaluate only this plant, e.g. plant_1")
+parser.add_argument(
+    "--recording-report",
+    help="Save a JSON audit of training labels and test metrics for each recording",
+)
 args = parser.parse_args()
 
 if args.threshold_scale <= 0:
@@ -70,12 +76,15 @@ model = build_model(
 model.load_state_dict(checkpoint["state_dict"])
 
 results = {}
+diagnostics = {}
 files = sorted(Path(args.partitions).glob("plant_*.npz"))
+if args.plant:
+    files = [file for file in files if file.stem == args.plant]
 if not files:
-    raise SystemExit("No plant partitions found")
+    raise SystemExit("No matching plant partitions found")
 
 for file in files:
-    windows, _ = load_client_partition(file)
+    windows, window_labels = load_client_partition(file)
     metadata = load_client_partition_metadata(file)
     required = {"recording_ids", "endpoint_labels", "window_start_indices"}
     missing = required - metadata.keys()
@@ -107,15 +116,39 @@ for file in files:
             train_scores,
             args.threshold_percentile,
         ) * args.threshold_scale
-    results[file.stem] = evaluate_skab_model(
+    test_scores = reconstruction_absolute_errors(
         model,
         plant_split.test_windows,
+        device=device,
+    )
+    results[file.stem] = evaluate_skab_scores(
+        test_scores,
         plant_split.test_labels,
         plant_split.test_recording_ids,
         threshold,
         consecutive_sequences=args.persistence,
-        device=device,
     )
+    if args.recording_report:
+        # Match the split's per-recording concatenation order. Counting window
+        # labels also catches faults earlier in a sequence than its endpoint.
+        ends = metadata["window_start_indices"] + windows.shape[1] - 1
+        train_indices = np.concatenate([
+            np.flatnonzero(
+                (metadata["recording_ids"] == recording_id) & (ends < args.train_size)
+            )
+            for recording_id in dict.fromkeys(metadata["recording_ids"].tolist())
+        ])
+        diagnostics[file.stem] = recording_diagnostics(
+            train_scores,
+            plant_split.train_recording_ids,
+            window_labels[train_indices],
+            metadata["endpoint_labels"][train_indices],
+            test_scores,
+            plant_split.test_recording_ids,
+            plant_split.test_labels,
+            threshold,
+            consecutive_sequences=args.persistence,
+        )
 
 macro_f1 = float(np.mean([metrics["f1"] for metrics in results.values()]))
 auc_values = [
@@ -141,3 +174,23 @@ if args.output:
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(summary, indent=2) + "\n")
+
+if args.recording_report:
+    report = {
+        "checkpoint": str(Path(args.weights)),
+        "partitions": str(Path(args.partitions)),
+        "train_size": args.train_size,
+        "policy": summary["policy"],
+        "notes": [
+            "Training labels are audited only; they do not change training or thresholds.",
+            "Counts are windows/endpoints, not distinct fault events.",
+            "Training window flags use the partition's window-label mode.",
+            "Macro recording AUC and average precision exclude single-class recordings.",
+            "Compare average precision with the recording's anomaly rate.",
+        ],
+        "plants": diagnostics,
+    }
+    output = Path(args.recording_report)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
+    print(f"Saved recording diagnostic report: {output}")

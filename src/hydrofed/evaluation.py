@@ -143,6 +143,19 @@ def evaluate_skab_model(
 ) -> dict[str, float | None]:
     """Evaluate point-aligned SKAB sequence endpoints with persistence."""
     scores = reconstruction_absolute_errors(model, windows, device=device)
+    return evaluate_skab_scores(
+        scores, endpoint_labels, recording_ids, threshold, consecutive_sequences,
+    )
+
+
+def evaluate_skab_scores(
+    scores: np.ndarray,
+    endpoint_labels: np.ndarray,
+    recording_ids: np.ndarray,
+    threshold: float | Mapping[str, float],
+    consecutive_sequences: int = 10,
+) -> dict:
+    """Apply the SKAB alert policy to previously computed scores."""
     predicted = persistent_predictions(
         scores,
         threshold,
