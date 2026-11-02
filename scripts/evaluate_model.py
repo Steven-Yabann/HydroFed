@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-import argparse, json, torch
+import argparse, json
 import numpy as np
 from hydrofed.data.pipeline import load_client_partition
 from hydrofed.data.scaling import WindowMinMaxScaler, WindowStandardScaler
 from hydrofed.models.lstm_autoencoder import build_model
+from hydrofed.federation.checkpoint import load_global_checkpoint
 from hydrofed.evaluation import evaluate_model
 p=argparse.ArgumentParser(); p.add_argument("weights"); p.add_argument("partition"); a=p.parse_args()
-x,y=load_client_partition(a.partition); checkpoint=torch.load(a.weights,map_location="cpu",weights_only=True)
+x,y=load_client_partition(a.partition); checkpoint=load_global_checkpoint(a.weights)
 preprocessing = checkpoint.get("preprocessing", {})
 if preprocessing.get("scaler") == "shared_normal_train_minmax":
     scaler = WindowMinMaxScaler(

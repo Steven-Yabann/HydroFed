@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from hydrofed.federation.checkpoint import save_global_checkpoint
+from hydrofed.federation.checkpoint import load_global_checkpoint, save_global_checkpoint
 from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.federation.client import HydroFedClient
 from hydrofed.data.pipeline import save_partitions
@@ -125,6 +125,36 @@ def test_global_checkpoint_round_trips_model_weights(tmp_path):
 
     for expected, actual in zip(original.parameters(), restored.parameters()):
         assert torch.allclose(expected, actual)
+
+
+def test_checkpoint_serializes_numpy_preprocessing_metadata_safely(tmp_path):
+    config = {
+        "hidden_size": 4,
+        "latent_size": 2,
+        "num_layers": 1,
+        "dropout": 0.0,
+    }
+    model = build_model(n_features=2, model_config=config)
+    path = save_global_checkpoint(
+        model.get_parameters_numpy(),
+        n_features=2,
+        output_path=tmp_path / "global_model.pt",
+        model_config=config,
+        preprocessing={"means": np.array([1.0, 2.0], dtype=np.float32)},
+    )
+
+    saved = load_global_checkpoint(path)
+
+    assert saved["preprocessing"]["means"] == [1.0, 2.0]
+
+
+def test_checkpoint_loader_supports_trusted_legacy_numpy_metadata(tmp_path):
+    path = tmp_path / "legacy_model.pt"
+    torch.save({"preprocessing": {"means": np.array([1.0])}}, path)
+
+    saved = load_global_checkpoint(path)
+
+    np.testing.assert_array_equal(saved["preprocessing"]["means"], [1.0])
 
 def test_strategy_records_round_with_its_run_id(tmp_path, monkeypatch):
     strategy = TrackingFedAvg(
