@@ -62,6 +62,8 @@ def train_epochs(
 
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
+    if learning_rate <= 0:
+        raise ValueError("learning_rate must be positive")
 
     dataset = PlantDataset(train_windows)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)

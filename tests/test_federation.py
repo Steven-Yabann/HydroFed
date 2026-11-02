@@ -17,12 +17,15 @@ def test_client_fit_and_evaluate_contract(tmp_path):
         tmp_path / "plant_1.npz",
         {"hidden_size": 4, "latent_size": 2, "num_layers": 1, "dropout": 0},
         batch_size=4,
+        learning_rate=0.002,
         device="cpu",
         seed=7
     )
 
     assert client.device == "cpu"
     assert client.seed == 7
+    assert client.learning_rate == 0.002
+    assert client.model.hidden_size == 4
     parameters=client.get_parameters({}); updated,count,metrics=client.fit(parameters,{"local_epochs":1})
     loss,evaluated,evaluation_metrics=client.evaluate(updated,{})
     assert count==7 and len(updated)==len(parameters) and metrics["client_id"]=="plant_1"

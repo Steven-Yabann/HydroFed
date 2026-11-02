@@ -106,6 +106,14 @@ def test_train_epochs_rejects_non_positive_batch_size():
     with pytest.raises(ValueError, match="batch_size must be positive"):
         train_epochs(model, windows, batch_size=0)
 
+
+def test_train_epochs_rejects_non_positive_learning_rate():
+    windows = np.random.randn(10, 16, 4).astype(np.float32)
+    model = LSTMAutoencoder(n_features=4)
+
+    with pytest.raises(ValueError, match="learning_rate must be positive"):
+        train_epochs(model, windows, learning_rate=0)
+
 def test_scoring_and_thresholding():
     windows=np.random.randn(9,8,2).astype(np.float32); model=LSTMAutoencoder(2,4,2,1,0)
     scores=reconstruction_errors(model,windows,batch_size=4)

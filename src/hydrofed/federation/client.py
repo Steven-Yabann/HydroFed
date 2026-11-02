@@ -22,6 +22,7 @@ class HydroFedClient(fl.client.NumPyClient):
     model_config=None,
     epochs=1,
     batch_size=64,
+    learning_rate: float = 1e-3,
     device: str = "auto",
     seed: int = 42,
     scaler: WindowMinMaxScaler | WindowStandardScaler | None = None,
@@ -30,6 +31,7 @@ class HydroFedClient(fl.client.NumPyClient):
     ):
         self.client_id = str(client_id); self.windows, self.labels = load_client_partition(partition_path)
         self.model = build_model(self.windows.shape[2], model_config); self.epochs, self.batch_size = epochs, batch_size
+        self.learning_rate = learning_rate
         if evaluation_protocol == "skab":
             metadata = load_client_partition_metadata(partition_path)
             required_fields = {
@@ -75,6 +77,7 @@ class HydroFedClient(fl.client.NumPyClient):
             self.plant_split.train_windows,
             int(config.get("local_epochs", self.epochs)),
             self.batch_size,
+            self.learning_rate,
             device=self.device,
         )
 

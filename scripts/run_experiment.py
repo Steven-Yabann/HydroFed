@@ -40,6 +40,12 @@ p = argparse.ArgumentParser()
 p.add_argument("--partitions", default="data/partitions")
 p.add_argument("--rounds", type=int, default=2)
 p.add_argument("--epochs", type=int, default=1)
+p.add_argument("--batch-size", type=int, default=64)
+p.add_argument("--learning-rate", type=float, default=1e-3)
+p.add_argument("--hidden-size", type=int, default=64)
+p.add_argument("--latent-size", type=int, default=16)
+p.add_argument("--num-layers", type=int, default=2)
+p.add_argument("--dropout", type=float, default=0.1)
 p.add_argument("--db", default="artifacts/experiments.db")
 p.add_argument("--keep-metrics-seconds", type=int, default=0)
 p.add_argument("--output", default="artifacts/federated/global_model.pt")
@@ -65,6 +71,20 @@ p.add_argument(
 )
 
 a=p.parse_args(); files=sorted(Path(a.partitions).glob("plant_*.npz"))
+
+if a.batch_size <= 0:
+    p.error("--batch-size must be positive")
+if a.learning_rate <= 0:
+    p.error("--learning-rate must be positive")
+if a.hidden_size <= 0 or a.latent_size <= 0 or a.num_layers <= 0:
+    p.error("model sizes and --num-layers must be positive")
+
+model_config = {
+    "hidden_size": a.hidden_size,
+    "latent_size": a.latent_size,
+    "num_layers": a.num_layers,
+    "dropout": a.dropout,
+}
 
 set_random_seed(a.seed)
 device = resolve_device(a.device)
@@ -127,6 +147,9 @@ run_id = run_store.create_run(
         "partitions": str(a.partitions),
         "rounds": a.rounds,
         "local_epochs": a.epochs,
+        "batch_size": a.batch_size,
+        "learning_rate": a.learning_rate,
+        "model": model_config,
         "client_count": len(files),
         "device": str(device),
         "seed": a.seed,
@@ -152,11 +175,14 @@ try:
             cid,
             files[int(cid)],
             epochs=a.epochs,
+            batch_size=a.batch_size,
+            learning_rate=a.learning_rate,
             device=device,
             seed=a.seed + int(cid),
             scaler=shared_scaler,
             evaluation_protocol=a.evaluation_protocol,
             skab_train_size=a.skab_train_size,
+            model_config=model_config,
         ).to_client()
 
     strategy = TrackingFedAvg(
@@ -166,7 +192,7 @@ try:
         fraction_evaluate=1.0,
         min_available_clients=len(files),
         initial_parameters=ndarrays_to_parameters(
-            build_model(n_features).get_parameters_numpy()
+            build_model(n_features, model_config).get_parameters_numpy()
         ),
     )
 
@@ -189,6 +215,7 @@ try:
         final_parameters,
         n_features,
         a.output,
+        model_config=model_config,
         preprocessing={
             "scaler": scaling_name,
             **(
@@ -207,7 +234,7 @@ try:
 
     print(f"Saved final global model: {checkpoint_path}")
 
-    global_model = build_model(n_features)
+    global_model = build_model(n_features, model_config)
     global_model.set_parameters_numpy(final_parameters)
 
     if a.evaluate:
