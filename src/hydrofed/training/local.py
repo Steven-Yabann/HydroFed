@@ -116,6 +116,32 @@ def reconstruction_errors(
     return np.concatenate(scores).astype(np.float64)
 
 
+def reconstruction_absolute_errors(
+    model: LSTMAutoencoder,
+    windows: np.ndarray,
+    batch_size: int = 256,
+    device: str = "cpu",
+) -> np.ndarray:
+    """Return the SKAB-style absolute reconstruction score for each sequence.
+
+    For each sequence, SKAB averages absolute error across time for every
+    sensor, then sums those sensor-level errors into one anomaly score.
+    """
+    loader = DataLoader(PlantDataset(windows), batch_size=batch_size, shuffle=False)
+    model.to(device)
+    model.eval()
+    scores: list[np.ndarray] = []
+
+    with torch.no_grad():
+        for batch in loader:
+            batch = batch.to(device)
+            reconstruction = model(batch)
+            score = torch.abs(batch - reconstruction).mean(dim=1).sum(dim=1)
+            scores.append(score.cpu().numpy())
+
+    return np.concatenate(scores).astype(np.float64)
+
+
 def calibrate_threshold(errors: np.ndarray, percentile: float = 95.0) -> float:
     """Choose a threshold from normal validation reconstruction errors."""
     values = np.asarray(errors, dtype=float)

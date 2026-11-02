@@ -47,6 +47,37 @@ def test_client_applies_supplied_shared_scaler_to_every_split(tmp_path):
     assert client.plant_split.train_windows.max() <= 0.7
     assert client.plant_split.test_windows.max() > 1.0
 
+
+def test_client_builds_skab_split_from_partition_provenance(tmp_path):
+    windows = np.arange(24, dtype=np.float32).reshape(12, 2, 1)
+    labels = np.zeros(12, dtype=np.int64)
+    save_partitions(
+        {"plant_1": (windows, labels)},
+        tmp_path,
+        metadata={
+            "plant_1": {
+                "recording_ids": np.array(["recording_a"] * 12),
+                "endpoint_labels": np.array([0] * 8 + [1] * 4),
+                "window_start_indices": np.arange(12, dtype=np.int64),
+            }
+        },
+    )
+
+    client = HydroFedClient(
+        "plant_1",
+        tmp_path / "plant_1.npz",
+        {"hidden_size": 4, "latent_size": 2, "num_layers": 1, "dropout": 0},
+        batch_size=4,
+        device="cpu",
+        evaluation_protocol="skab",
+        skab_train_size=4,
+    )
+
+    assert len(client.plant_split.train_windows) == 3
+    assert len(client.plant_split.test_windows) == 8
+    assert client.plant_split.test_labels.sum() == 4
+    assert client.plant_split.test_recording_ids.tolist() == ["recording_a"] * 8
+
 def test_strategy_exposes_latest_global_parameters(tmp_path):
     initial = ndarrays_to_parameters(
         [np.array([1.0, 2.0], dtype=np.float32)]

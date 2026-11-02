@@ -1,9 +1,16 @@
 import flwr as fl
-from hydrofed.data.pipeline import load_client_partition
+from hydrofed.data.pipeline import (
+    load_client_partition,
+    load_client_partition_metadata,
+)
 from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.training.local import train_epochs, reconstruction_errors
-from hydrofed.data.splits import split_plant_windows
-from hydrofed.data.scaling import WindowMinMaxScaler, scale_plant_split
+from hydrofed.data.splits import split_plant_windows, split_skab_plant_windows
+from hydrofed.data.scaling import (
+    WindowMinMaxScaler,
+    WindowStandardScaler,
+    scale_plant_split,
+)
 from hydrofed.runtime import resolve_device
 from hydrofed.reproducibility import set_random_seed
 
@@ -17,14 +24,39 @@ class HydroFedClient(fl.client.NumPyClient):
     batch_size=64,
     device: str = "auto",
     seed: int = 42,
-    scaler: WindowMinMaxScaler | None = None,
+    scaler: WindowMinMaxScaler | WindowStandardScaler | None = None,
+    evaluation_protocol: str = "window",
+    skab_train_size: int = 400,
     ):
         self.client_id = str(client_id); self.windows, self.labels = load_client_partition(partition_path)
         self.model = build_model(self.windows.shape[2], model_config); self.epochs, self.batch_size = epochs, batch_size
-        self.plant_split = split_plant_windows(
-            self.windows,
-            self.labels,
-        )
+        if evaluation_protocol == "skab":
+            metadata = load_client_partition_metadata(partition_path)
+            required_fields = {
+                "recording_ids",
+                "endpoint_labels",
+                "window_start_indices",
+            }
+            missing = required_fields - metadata.keys()
+            if missing:
+                raise ValueError(
+                    "SKAB protocol requires partition provenance fields: "
+                    + ", ".join(sorted(missing))
+                )
+            self.plant_split = split_skab_plant_windows(
+                self.windows,
+                metadata["endpoint_labels"],
+                metadata["recording_ids"],
+                metadata["window_start_indices"],
+                train_size=skab_train_size,
+            )
+        elif evaluation_protocol == "window":
+            self.plant_split = split_plant_windows(
+                self.windows,
+                self.labels,
+            )
+        else:
+            raise ValueError("evaluation_protocol must be 'window' or 'skab'")
         if scaler is not None:
             self.plant_split = scale_plant_split(self.plant_split, scaler)
         self.device = resolve_device(device)

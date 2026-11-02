@@ -2,7 +2,7 @@
 import argparse, json, torch
 import numpy as np
 from hydrofed.data.pipeline import load_client_partition
-from hydrofed.data.scaling import WindowMinMaxScaler
+from hydrofed.data.scaling import WindowMinMaxScaler, WindowStandardScaler
 from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.evaluation import evaluate_model
 p=argparse.ArgumentParser(); p.add_argument("weights"); p.add_argument("partition"); a=p.parse_args()
@@ -12,6 +12,15 @@ if preprocessing.get("scaler") == "shared_normal_train_minmax":
     scaler = WindowMinMaxScaler(
         minimums=np.asarray(preprocessing["minimums"], dtype=np.float32),
         spans=np.asarray(preprocessing["spans"], dtype=np.float32),
+    )
+    x = scaler.transform(x)
+elif preprocessing.get("scaler") == "shared_skab_train_standard":
+    scaler = WindowStandardScaler(
+        means=np.asarray(preprocessing["means"], dtype=np.float32),
+        standard_deviations=np.asarray(
+            preprocessing["standard_deviations"],
+            dtype=np.float32,
+        ),
     )
     x = scaler.transform(x)
 model=build_model(checkpoint.get("n_features",x.shape[2])); model.load_state_dict(checkpoint["state_dict"]); result=evaluate_model(model,x,y,checkpoint["threshold"]); print(json.dumps(result,indent=2))

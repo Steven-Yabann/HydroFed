@@ -5,18 +5,26 @@ from pathlib import Path
 import flwr as fl
 import json
 
-from hydrofed.evaluation import evaluate_model
+from hydrofed.evaluation import evaluate_model, evaluate_skab_model
 from hydrofed.storage import ExperimentStore
-from hydrofed.training.local import calibrate_threshold, reconstruction_errors
+from hydrofed.training.local import (
+    calibrate_threshold,
+    reconstruction_absolute_errors,
+    reconstruction_errors,
+)
 from flwr.common import ndarrays_to_parameters
-from hydrofed.data.pipeline import load_client_partition
+from hydrofed.data.pipeline import (
+    load_client_partition,
+    load_client_partition_metadata,
+)
 from hydrofed.federation.client import HydroFedClient
 from hydrofed.federation.strategy import TrackingFedAvg
 from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.monitoring import serve, F1
 from hydrofed.federation.checkpoint import save_global_checkpoint
-from hydrofed.data.splits import split_plant_windows
+from hydrofed.data.splits import split_plant_windows, split_skab_plant_windows
 from hydrofed.data.scaling import (
+    fit_shared_standard_window_scaler,
     fit_shared_window_scaler,
     scale_plant_split,
 )
@@ -35,6 +43,16 @@ p.add_argument("--evaluate", action="store_true")
 p.add_argument("--threshold-percentile", type=float, default=95.0)
 p.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
 p.add_argument("--seed", type=int, default=42)
+p.add_argument(
+    "--evaluation-protocol",
+    choices=("window", "skab"),
+    default="window",
+    help="Use existing window labels or SKAB-aligned point endpoint labels",
+)
+p.add_argument("--skab-train-size", type=int, default=400)
+p.add_argument("--skab-threshold-percentile", type=float, default=99.0)
+p.add_argument("--skab-threshold-scale", type=float, default=1.5)
+p.add_argument("--skab-persistence", type=int, default=10)
 
 a=p.parse_args(); files=sorted(Path(a.partitions).glob("plant_*.npz"))
 
@@ -47,15 +65,50 @@ if not files:
 
 n_features=load_client_partition(files[0])[0].shape[2]\
 
+
+def build_plant_split(file):
+    windows, labels = load_client_partition(file)
+
+    if a.evaluation_protocol == "window":
+        return split_plant_windows(windows, labels)
+
+    metadata = load_client_partition_metadata(file)
+    required_fields = {
+        "recording_ids",
+        "endpoint_labels",
+        "window_start_indices",
+    }
+    missing = required_fields - metadata.keys()
+    if missing:
+        raise SystemExit(
+            "SKAB protocol requires a temporal partition prepared with the "
+            "latest prepare_data.py. Missing: " + ", ".join(sorted(missing))
+        )
+    return split_skab_plant_windows(
+        windows,
+        metadata["endpoint_labels"],
+        metadata["recording_ids"],
+        metadata["window_start_indices"],
+        train_size=a.skab_train_size,
+    )
+
+
 raw_plant_splits = {}
 for file in files:
-    windows, labels = load_client_partition(file)
-    raw_plant_splits[file] = split_plant_windows(windows, labels)
+    raw_plant_splits[file] = build_plant_split(file)
 
-shared_scaler = fit_shared_window_scaler(
-    plant_split.train_windows
-    for plant_split in raw_plant_splits.values()
-)
+if a.evaluation_protocol == "skab":
+    shared_scaler = fit_shared_standard_window_scaler(
+        plant_split.train_windows
+        for plant_split in raw_plant_splits.values()
+    )
+    scaling_name = "shared_skab_train_standard"
+else:
+    shared_scaler = fit_shared_window_scaler(
+        plant_split.train_windows
+        for plant_split in raw_plant_splits.values()
+    )
+    scaling_name = "shared_normal_train_minmax"
 
 run_store = ExperimentStore(a.db)
 run_id = run_store.create_run(
@@ -69,7 +122,12 @@ run_id = run_store.create_run(
         "seed": a.seed,
         "evaluate": a.evaluate,
         "threshold_percentile": a.threshold_percentile,
-        "scaling": "shared_normal_train_minmax",
+        "scaling": scaling_name,
+        "evaluation_protocol": a.evaluation_protocol,
+        "skab_train_size": a.skab_train_size,
+        "skab_threshold_percentile": a.skab_threshold_percentile,
+        "skab_threshold_scale": a.skab_threshold_scale,
+        "skab_persistence": a.skab_persistence,
     },
 )
 
@@ -86,6 +144,8 @@ try:
             device=device,
             seed=a.seed + int(cid),
             scaler=shared_scaler,
+            evaluation_protocol=a.evaluation_protocol,
+            skab_train_size=a.skab_train_size,
         ).to_client()
 
     strategy = TrackingFedAvg(
@@ -119,9 +179,18 @@ try:
         n_features,
         a.output,
         preprocessing={
-            "scaler": "shared_normal_train_minmax",
-            "minimums": shared_scaler.minimums,
-            "spans": shared_scaler.spans,
+            "scaler": scaling_name,
+            **(
+                {
+                    "means": shared_scaler.means,
+                    "standard_deviations": shared_scaler.standard_deviations,
+                }
+                if a.evaluation_protocol == "skab"
+                else {
+                    "minimums": shared_scaler.minimums,
+                    "spans": shared_scaler.spans,
+                }
+            ),
         },
     )
 
@@ -139,24 +208,42 @@ try:
                 shared_scaler,
             )
 
-            calibration_errors = reconstruction_errors(
-                global_model,
-                plant_split.calibration_windows,
-                device=device,
-            )
-
-            threshold = calibrate_threshold(
-                calibration_errors,
-                a.threshold_percentile,
-            )
-
-            metrics = evaluate_model(
-                global_model,
-                plant_split.test_windows,
-                plant_split.test_labels,
-                threshold,
-                device=device,
-            )
+            if a.evaluation_protocol == "skab":
+                train_scores = reconstruction_absolute_errors(
+                    global_model,
+                    plant_split.train_windows,
+                    device=device,
+                )
+                threshold = calibrate_threshold(
+                    train_scores,
+                    a.skab_threshold_percentile,
+                ) * a.skab_threshold_scale
+                metrics = evaluate_skab_model(
+                    global_model,
+                    plant_split.test_windows,
+                    plant_split.test_labels,
+                    plant_split.test_recording_ids,
+                    threshold,
+                    consecutive_sequences=a.skab_persistence,
+                    device=device,
+                )
+            else:
+                calibration_errors = reconstruction_errors(
+                    global_model,
+                    plant_split.calibration_windows,
+                    device=device,
+                )
+                threshold = calibrate_threshold(
+                    calibration_errors,
+                    a.threshold_percentile,
+                )
+                metrics = evaluate_model(
+                    global_model,
+                    plant_split.test_windows,
+                    plant_split.test_labels,
+                    threshold,
+                    device=device,
+                )
 
             evaluation_results[file.stem] = metrics
 

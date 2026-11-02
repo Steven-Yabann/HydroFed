@@ -3,7 +3,13 @@ import pytest
 import torch
 
 from hydrofed.models.lstm_autoencoder import LSTMAutoencoder
-from hydrofed.training.local import PlantDataset, train_epochs, reconstruction_errors, calibrate_threshold
+from hydrofed.training.local import (
+    PlantDataset,
+    calibrate_threshold,
+    reconstruction_absolute_errors,
+    reconstruction_errors,
+    train_epochs,
+)
 
 
 def test_plant_dataset_returns_one_window_at_a_time():
@@ -105,3 +111,14 @@ def test_scoring_and_thresholding():
     scores=reconstruction_errors(model,windows,batch_size=4)
     assert scores.shape==(9,) and np.all(scores>=0)
     assert np.isfinite(calibrate_threshold(scores))
+
+
+def test_skab_absolute_scores_return_one_finite_score_per_window():
+    windows = np.random.randn(5, 8, 2).astype(np.float32)
+    model = LSTMAutoencoder(2, 4, 2, 1, 0)
+
+    scores = reconstruction_absolute_errors(model, windows, batch_size=2)
+
+    assert scores.shape == (5,)
+    assert np.all(np.isfinite(scores))
+    assert np.all(scores >= 0)

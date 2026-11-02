@@ -1,5 +1,5 @@
 import numpy as np
-from hydrofed.evaluation import compute_metrics
+from hydrofed.evaluation import compute_metrics, persistent_predictions
 from hydrofed.training.local import calibrate_threshold
 
 def test_metrics_perfect_separation():
@@ -38,3 +38,29 @@ def test_metrics_report_normal_and_anomalous_score_separation():
     assert result["mean_normal_score"] == 0.2
     assert result["mean_anomalous_score"] == 0.8
     assert result["score_gap"] == 0.6000000000000001
+
+
+def test_persistent_predictions_require_a_full_run_within_each_recording():
+    scores = np.array([0.9, 0.9, 0.2, 0.9, 0.9, 0.9])
+    recording_ids = np.array(["a", "a", "a", "b", "b", "b"])
+
+    predicted = persistent_predictions(
+        scores,
+        threshold=0.5,
+        recording_ids=recording_ids,
+        consecutive_sequences=2,
+    )
+
+    np.testing.assert_array_equal(predicted, np.array([0, 1, 0, 0, 1, 1]))
+
+
+def test_compute_metrics_accepts_persistence_predictions():
+    result = compute_metrics(
+        labels=np.array([0, 1, 1]),
+        scores=np.array([0.1, 0.7, 0.8]),
+        threshold=0.5,
+        predicted=np.array([0, 0, 1]),
+    )
+
+    assert result["precision"] == 1.0
+    assert result["recall"] == 0.5
