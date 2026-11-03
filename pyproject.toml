@@ -26,6 +26,9 @@ dev = [
     "pytest==8.2.2",
     "httpx==0.28.1",
 ]
+experiments = [
+    "xgboost==2.1.4",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
