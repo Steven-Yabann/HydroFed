@@ -132,6 +132,121 @@ def calibrate_recording_thresholds(
     }
 
 
+def mahalanobis_scores(
+    values: np.ndarray,
+    baseline: np.ndarray,
+    shrinkage: float = 0.1,
+) -> np.ndarray:
+    """Measure each row's distance from a recording's normal baseline."""
+    values, baseline = np.asarray(values, dtype=float), np.asarray(baseline, dtype=float)
+    if len(baseline) < 2:
+        raise ValueError("baseline must contain at least two rows")
+    if not 0 <= shrinkage <= 1:
+        raise ValueError("shrinkage must be between 0 and 1")
+
+    covariance = np.cov(baseline, rowvar=False) + 1e-6 * np.eye(baseline.shape[1])
+    covariance = (
+        (1 - shrinkage) * covariance
+        + shrinkage * np.diag(np.diag(covariance))
+    )
+    deviations = values - baseline.mean(axis=0)
+    distances = np.einsum(
+        "ij,jk,ik->i",
+        deviations,
+        np.linalg.inv(covariance),
+        deviations,
+    )
+    return np.sqrt(np.clip(distances, 0, None))
+
+
+def robust_zscores(scores: np.ndarray, baseline: np.ndarray) -> np.ndarray:
+    """Express scores in median and MAD units of a normal baseline."""
+    median = np.median(baseline)
+    spread = 1.4826 * np.median(np.abs(baseline - median)) + 1e-6
+    return (np.asarray(scores, dtype=float) - median) / spread
+
+
+def exponential_smoothing(scores: np.ndarray, alpha: float) -> np.ndarray:
+    """Causally smooth scores so sustained evidence outweighs single spikes."""
+    if not 0 < alpha <= 1:
+        raise ValueError("alpha must be in (0, 1]")
+
+    smoothed = np.empty(len(scores), dtype=float)
+    state = float(scores[0]) if len(scores) else 0.0
+    for index, score in enumerate(scores):
+        state = alpha * float(score) + (1 - alpha) * state
+        smoothed[index] = state
+    return smoothed
+
+
+def hybrid_recording_scores(
+    train_levels: np.ndarray,
+    train_residuals: np.ndarray,
+    train_recording_ids: np.ndarray,
+    test_levels: np.ndarray,
+    test_residuals: np.ndarray,
+    test_recording_ids: np.ndarray,
+    smoothing: float = 0.2,
+    mad_multiplier: float = 24.0,
+    calibration_tail: float = 0.25,
+) -> tuple[np.ndarray, dict[str, float]]:
+    """Score sequences against each recording's own normal baseline.
+
+    Two complementary distances are combined, as in SKAB's T-squared+Q
+    detector: how far sensor levels sit from the baseline, and how far the
+    model's residuals do. The threshold comes from the last part of the
+    baseline, which approximates the most recent normal behaviour. Test labels
+    are not used. Recordings without baseline windows are not scored.
+    """
+    if mad_multiplier <= 0:
+        raise ValueError("mad_multiplier must be positive")
+    if not 0 < calibration_tail <= 1:
+        raise ValueError("calibration_tail must be in (0, 1]")
+
+    train_recording_ids = np.asarray(train_recording_ids)
+    test_recording_ids = np.asarray(test_recording_ids)
+    test_scores = np.full(len(test_recording_ids), -np.inf)
+    thresholds = {}
+
+    for recording_id in dict.fromkeys(train_recording_ids.tolist()):
+        train_mask = train_recording_ids == recording_id
+        test_mask = test_recording_ids == recording_id
+        baseline_levels = train_levels[train_mask]
+        baseline_residuals = train_residuals[train_mask]
+
+        def combined(levels, residuals):
+            return np.maximum(
+                robust_zscores(
+                    mahalanobis_scores(levels, baseline_levels),
+                    mahalanobis_scores(baseline_levels, baseline_levels),
+                ),
+                robust_zscores(
+                    mahalanobis_scores(residuals, baseline_residuals),
+                    mahalanobis_scores(baseline_residuals, baseline_residuals),
+                ),
+            )
+
+        # The smoother runs through the baseline so scoring starts from a
+        # settled state, as it would on a live sensor stream.
+        smoothed = exponential_smoothing(
+            np.concatenate((
+                combined(baseline_levels, baseline_residuals),
+                combined(test_levels[test_mask], test_residuals[test_mask]),
+            )),
+            smoothing,
+        )
+        n_train = int(train_mask.sum())
+        calibration = smoothed[
+            n_train - max(1, int(np.ceil(n_train * calibration_tail))):n_train
+        ]
+        median = np.median(calibration)
+        spread = 1.4826 * np.median(np.abs(calibration - median)) + 1e-6
+        thresholds[str(recording_id)] = float(median + mad_multiplier * spread)
+        test_scores[test_mask] = smoothed[n_train:]
+
+    return test_scores, thresholds
+
+
 def evaluate_skab_model(
     model,
     windows: np.ndarray,
@@ -146,6 +261,32 @@ def evaluate_skab_model(
     return evaluate_skab_scores(
         scores, endpoint_labels, recording_ids, threshold, consecutive_sequences,
     )
+
+
+def false_positive_rate(labels: np.ndarray, predicted: np.ndarray) -> float | None:
+    """Return the share of normal endpoints that raised an alert."""
+    normal = np.asarray(labels) == 0
+    return float(np.asarray(predicted)[normal].mean()) if normal.any() else None
+
+
+def macro_recording_auc_roc(
+    scores: np.ndarray,
+    labels: np.ndarray,
+    recording_ids: np.ndarray,
+) -> float | None:
+    """Average ROC AUC within recordings.
+
+    Pooled AUC rewards score-level differences between recordings, so it can
+    look excellent for a detector that ranks a recording's faults poorly.
+    """
+    scores, labels = np.asarray(scores), np.asarray(labels)
+    recording_ids = np.asarray(recording_ids)
+    values = [
+        roc_auc_score(labels[recording_ids == recording_id], scores[recording_ids == recording_id])
+        for recording_id in dict.fromkeys(recording_ids.tolist())
+        if len(np.unique(labels[recording_ids == recording_id])) == 2
+    ]
+    return float(np.mean(values)) if values else None
 
 
 def evaluate_skab_scores(
@@ -175,6 +316,12 @@ def evaluate_skab_scores(
         threshold_details = {"threshold_mode": "per_plant"}
 
     return compute_metrics(endpoint_labels, scores, reported_threshold, predicted) | {
+        "false_positive_rate": false_positive_rate(endpoint_labels, predicted),
+        "macro_recording_auc_roc": macro_recording_auc_roc(
+            scores,
+            endpoint_labels,
+            recording_ids,
+        ),
         "mean_anomaly_score": float(scores.mean()),
         "consecutive_sequences": int(consecutive_sequences),
         **threshold_details,

@@ -382,3 +382,21 @@ def test_stratified_iid_partition_balances_clients_and_preserves_windows():
         recovered_window_ids,
         np.arange(50, dtype=np.float32),
     )
+
+
+def test_skab_excluded_recordings_still_train_but_are_not_tested():
+    windows = np.zeros((40, 2, 1), dtype=np.float32)
+    recording_ids = np.array(["anomaly-free/a.csv"] * 20 + ["valve1/1.csv"] * 20)
+    starts = np.tile(np.arange(20), 2)
+
+    split = split_skab_plant_windows(
+        windows,
+        np.zeros(40, dtype=np.int64),
+        recording_ids,
+        starts,
+        train_size=5,
+        exclude_test_recordings=("anomaly-free",),
+    )
+
+    assert set(split.train_recording_ids) == {"anomaly-free/a.csv", "valve1/1.csv"}
+    assert set(split.test_recording_ids) == {"valve1/1.csv"}

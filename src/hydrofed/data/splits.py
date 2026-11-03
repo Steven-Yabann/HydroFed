@@ -79,13 +79,16 @@ def split_skab_plant_windows(
     train_size: int = 400,
     window_labels: np.ndarray | None = None,
     training_policy: str = "chronological",
+    exclude_test_recordings: tuple[str, ...] = (),
 ) -> PlantDataSplit:
     """Create SKAB-style chronological train and point-aligned test windows.
 
     Each recording contributes windows ending inside its first ``train_size``
     observations for training. Test windows must start at or after that
     boundary, so no test sequence contains training timestamps. Test labels are
-    the original SKAB anomaly labels at each sequence endpoint.
+    the original SKAB anomaly labels at each sequence endpoint. Recordings
+    whose ID contains an ``exclude_test_recordings`` entry still train but are
+    not tested, matching how the SKAB leaderboard treats anomaly-free data.
     """
     arrays = (windows, endpoint_labels, recording_ids, window_start_indices)
     if any(len(array) != len(windows) for array in arrays[1:]):
@@ -129,7 +132,8 @@ def split_skab_plant_windows(
                 np.repeat(str(recording_id), train_mask.sum())
             )
 
-        if test_mask.any():
+        excluded = any(name in str(recording_id) for name in exclude_test_recordings)
+        if test_mask.any() and not excluded:
             test_sets.append(recording_windows[test_mask])
             label_sets.append(recording_labels[test_mask].astype(np.int64))
             test_recording_sets.append(

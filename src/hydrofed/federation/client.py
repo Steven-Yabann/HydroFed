@@ -29,6 +29,7 @@ class HydroFedClient(fl.client.NumPyClient):
     evaluation_protocol: str = "window",
     skab_train_size: int = 400,
     skab_training_policy: str = "chronological",
+    skab_exclude_test_recordings: tuple[str, ...] = (),
     ):
         self.client_id = str(client_id); self.windows, self.labels = load_client_partition(partition_path)
         self.model = build_model(self.windows.shape[2], model_config); self.epochs, self.batch_size = epochs, batch_size
@@ -54,6 +55,7 @@ class HydroFedClient(fl.client.NumPyClient):
                 train_size=skab_train_size,
                 window_labels=self.labels,
                 training_policy=skab_training_policy,
+                exclude_test_recordings=skab_exclude_test_recordings,
             )
         elif evaluation_protocol == "window":
             self.plant_split = split_plant_windows(

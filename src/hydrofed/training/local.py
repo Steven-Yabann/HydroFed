@@ -144,6 +144,31 @@ def reconstruction_absolute_errors(
     return np.concatenate(scores).astype(np.float64)
 
 
+def reconstruction_signed_residuals(
+    model: LSTMAutoencoder,
+    windows: np.ndarray,
+    batch_size: int = 256,
+    device: str = "cpu",
+) -> np.ndarray:
+    """Return each sequence's mean signed residual per sensor.
+
+    Keeping the sign and the sensors separate matters for SKAB faults, which
+    often move one sensor only. An absolute error summed across sensors can
+    dilute that movement, or shrink when a fault cancels an existing offset.
+    """
+    loader = DataLoader(PlantDataset(windows), batch_size=batch_size, shuffle=False)
+    model.to(device)
+    model.eval()
+    residuals: list[np.ndarray] = []
+
+    with torch.no_grad():
+        for batch in loader:
+            batch = batch.to(device)
+            residuals.append((batch - model(batch)).mean(dim=1).cpu().numpy())
+
+    return np.concatenate(residuals).astype(np.float64)
+
+
 def calibrate_threshold(errors: np.ndarray, percentile: float = 95.0) -> float:
     """Choose a threshold from normal validation reconstruction errors."""
     values = np.asarray(errors, dtype=float)
