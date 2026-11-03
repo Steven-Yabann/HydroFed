@@ -108,12 +108,21 @@ The candidates fall into three categories:
 | Recurrent | LSTM autoencoder (latent 4) | normal baseline windows |
 | Transformer | transformer autoencoder with a latent-4 bottleneck, d_model 32 or 64 | normal baseline windows |
 | Classic | Random Forest, XGBoost (supervised); Isolation Forest (unsupervised) | labelled faults / normal baseline windows |
+| Federated classic | XGBoost trained with Flower's bagging aggregation | labelled faults, kept at each plant |
 
 The autoencoders train federated on the same schedule as above. Classic
 models use summary statistics per sensor and window (mean, sd, min, max, last
 value, change), standardised against each recording's own baseline, so every
 model gets the same baseline information. Settings are fixed in the code, not
 tuned.
+
+Tree ensembles cannot be averaged with FedAvg. Federated XGBoost follows
+Flower's `FedXgbBagging` strategy and reuses its aggregation function. Each
+round, every plant loads the shared model and boosts one tree on its own
+labelled windows. It uploads only that tree, and the server appends all the
+new trees. It uses the same tree settings as centralised XGBoost, over 60
+rounds. Only plants with labelled faults take part. plant_1's development
+recording is the anomaly-free one, so four plants contribute 240 trees.
 
 Selection uses development recordings only:
 
@@ -137,6 +146,7 @@ different OpenMP runtimes, and on macOS one crashes the other.
 | Classic | Random Forest | yes | 0.923 | |
 | Classic | XGBoost | yes | 0.924 | yes |
 | Classic | Isolation Forest | no | 0.863 | |
+| Federated classic | XGBoost, federated bagging | yes | 0.913 | yes |
 
 Random Forest and XGBoost are effectively tied, and so are the two
 transformers.
@@ -151,12 +161,19 @@ transformers.
 | Transformer (d_model 32) | residual | 0.438 ± 0.028 | 0.096 ± 0.027 | 0.776 ± 0.020 | 11.3/17 | 45 s |
 | XGBoost | trained on all fault types | 0.747 ± 0.004 | 0.137 ± 0.009 | 0.862 ± 0.002 | 16.7/17 | 7 s |
 | XGBoost | fault type not seen in training | 0.624 ± 0.004 | 0.098 ± 0.004 | 0.813 ± 0.002 | 16.7/17 | 24 s |
+| XGBoost, federated | trained on all fault types | 0.688 ± 0.011 | 0.118 ± 0.004 | 0.837 ± 0.005 | 17.0/17 | 9 s |
+| XGBoost, federated | fault type not seen in training | 0.605 ± 0.012 | 0.084 ± 0.004 | 0.791 ± 0.006 | 17.0/17 | 37 s |
 
-| Model | Parameters | Bytes per federated round |
-|---|---|---|
-| LSTM autoencoder | 104,204 | 4.17 MB |
-| Transformer (d_model 32) | 35,020 | 1.40 MB |
-| XGBoost | 300 trees | cannot be averaged with FedAvg |
+| Model | Training | Size | Communication for one training run |
+|---|---|---|---|
+| LSTM autoencoder | FedAvg, 20 rounds, 5 plants | 104,204 parameters | 83.4 MB (4.17 MB a round) |
+| Transformer (d_model 32) | FedAvg, 20 rounds, 5 plants | 35,020 parameters | 28.0 MB (1.40 MB a round) |
+| XGBoost, federated | bagging, 60 rounds, 4 plants | 240 trees (0.48 MB as JSON) | 56.1 MB: 0.55 MB up, 55.5 MB down |
+| XGBoost | centralised | 300 trees | raw data sent to a server |
+
+Federated XGBoost traffic is almost all downlink. Each round the server sends
+the whole growing model to every plant, as Flower's bagging strategy does,
+serialised as JSON.
 
 The transformer does not beat the LSTM. Its residual AUC is lower (0.776
 against 0.803), and inside the hybrid detector the two are tied. It is about
@@ -175,11 +192,11 @@ What this means for HydroFed:
 - The autoencoders need no fault labels. A new plant rarely has labelled
   faults, so they remain the default detector. Supervised models become an
   option once a fleet has collected labelled incidents.
-- Tree ensembles cannot be combined with FedAvg. Training XGBoost across
-  plants would need a federated tree protocol, such as histogram-sharing
-  boosting, which HydroFed does not implement. These results are centralised
-  training on pooled labelled data, so they are an upper reference, not a
-  federated option.
+- XGBoost can be federated with bagging. It loses about 0.025 AUC against
+  centralised training, much as federation costs the LSTM's own residual
+  score about 0.04. At about the LSTM detector's recall (0.69 against 0.68),
+  it raises half the false alarms (11.8% against 23.5%). But it needs labelled
+  faults at each plant, and plants without them add nothing.
 - Isolation Forest, the unsupervised classic model, ranks faults about as well
   as the LSTM's residuals on development recordings (AUC 0.863 against
   0.873).
@@ -192,3 +209,29 @@ What this means for HydroFed:
   jobs in parallel on a shared laptop, so treat them as relative only.
 - Each model has one fixed configuration, plus two transformer sizes. A wider
   search on development recordings could move any of these numbers.
+- Federated XGBoost shares trees, which encode split thresholds on each
+  plant's features. That reveals more about local data than averaged neural
+  network weights, and this comparison does not measure it.
+
+## Showing the comparisons on the dashboard
+
+The dashboard's Comparisons page (`#comparisons`) reads the latest completed
+`regime_comparison` and `model_comparison` runs from the API. Save results to
+the database the API uses, either while running:
+
+```bash
+.venv/bin/python scripts/run_comparison.py regimes --jobs 3 --db artifacts/experiments.db
+.venv/bin/python scripts/run_comparison.py models --jobs 3 --db artifacts/experiments.db
+```
+
+or from saved JSON results:
+
+```bash
+.venv/bin/python scripts/run_comparison.py publish \
+  --regimes artifacts/comparison/regimes.json \
+  --models artifacts/comparison/models.json \
+  --db artifacts/experiments.db
+```
+
+For the hosted dashboard, upload that database as described in
+[deployment.md](deployment.md#importing-experiment-history).

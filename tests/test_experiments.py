@@ -8,6 +8,7 @@ from hydrofed.experiments.communication import (
     raw_skab_bytes,
     streaming_bytes_per_day,
 )
+from hydrofed.experiments.publish import REGIME_EXPERIMENT, model_rows, publish, regime_rows
 from hydrofed.experiments.recordings import (
     load_skab_recordings,
     plant_training_windows,
@@ -228,3 +229,86 @@ def test_summarise_seeds_skips_unavailable_values():
 
     assert summary["recall"]["mean"] == pytest.approx(0.6)
     assert summary["delay"] == {"mean": 4.0, "sd": 0.0}
+
+
+def _metric(mean):
+    return {"mean": mean, "sd": 0.0}
+
+
+def _summary(recall):
+    return {"recall": _metric(recall), "false_positive_rate": _metric(0.1)}
+
+
+def test_regime_rows_flatten_every_regime_score_and_role():
+    result = {
+        "config": {"rounds": 20},
+        "summary": {
+            label: {score: {role: _summary(0.5) for role in ("dev", "final")} for score in ("hybrid", "residual")}
+            for label in ("federated", "centralised", "federated_5r")
+        },
+        "communication": {
+            "model_bytes": 100, "clients": 5, "streaming_bytes_per_plant_day_1hz": 2.0,
+            "raw_skab": {"csv_bytes": 10, "binary_bytes": 5},
+            "federated": {"5_rounds": {"total_bytes": 5000}, "20_rounds": {"total_bytes": 20000}},
+        },
+    }
+
+    rows = regime_rows(result)
+
+    detection = [row for row in rows if row["kind"] == "detection"]
+    assert len(detection) == 3 * 2 * 2
+    short = next(row for row in detection if row["client_id"] == "federated_5r")["metrics"]
+    assert (short["regime"], short["rounds"]) == ("federated", 5)
+    central = next(row for row in detection if row["client_id"] == "centralised")["metrics"]
+    assert (central["regime"], central["rounds"], central["recall"]["mean"]) == ("centralised", 20, 0.5)
+    assert {row["metrics"]["rounds"] for row in rows if row["kind"] == "communication"} == {5, 20}
+    raw = next(row for row in rows if row["kind"] == "raw_data")["metrics"]
+    assert raw["model_bytes"] == 100 and raw["csv_bytes"] == 10
+
+
+def test_model_rows_mark_selected_candidates_and_training():
+    def candidate(category, training, dev_auc):
+        return {
+            "category": category, "training": training, "needs_fault_labels": training != "FedAvg",
+            "selection_score": "model",
+            "summary": {"model": {"dev": {"macro_recording_auc_roc": _metric(dev_auc)}, "final": _summary(0.6)}},
+        }
+
+    result = {
+        "selected": {"recurrent": "lstm_autoencoder"},
+        "candidates": {
+            "lstm_autoencoder": candidate("recurrent", "FedAvg", 0.87) | {"parameters": 10},
+            "federated_xgboost": candidate("federated_classic", "FedXgbBagging", 0.9) | {"trees": 240},
+        },
+    }
+
+    rows = model_rows(result)
+
+    candidates = {row["client_id"]: row["metrics"] for row in rows if row["kind"] == "candidate"}
+    assert candidates["lstm_autoencoder"]["selected"] is True
+    assert candidates["federated_xgboost"]["selected"] is False
+    assert candidates["federated_xgboost"]["trees"] == 240
+    assert candidates["lstm_autoencoder"]["dev_auc"] == 0.87
+    detection = [row for row in rows if row["kind"] == "detection"]
+    assert {(row["client_id"], row["metrics"]["role"]) for row in detection} == {
+        ("lstm_autoencoder", "dev"), ("lstm_autoencoder", "final"),
+        ("federated_xgboost", "dev"), ("federated_xgboost", "final"),
+    }
+
+
+def test_published_comparisons_are_served_by_the_api(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from hydrofed.api import create_app
+    from hydrofed.storage import ExperimentStore
+
+    database = tmp_path / "experiments.db"
+    rows = [{"kind": "detection", "client_id": "federated", "metrics": {"role": "final", **_summary(0.7)}}]
+    run_id = publish(ExperimentStore(database), REGIME_EXPERIMENT, {"rounds": 20}, rows)
+    client = TestClient(create_app(database))
+
+    runs = client.get("/api/runs", params={"experiment": REGIME_EXPERIMENT}).json()["runs"]
+    results = client.get("/api/results", params={"run_id": run_id, "kind": "detection"}).json()["results"]
+
+    assert runs[0]["run_id"] == run_id and runs[0]["status"] == "completed"
+    assert results[0]["metrics"]["recall"]["mean"] == 0.7
