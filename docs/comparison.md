@@ -93,3 +93,102 @@ Fewer rounds cost little detection on development recordings (hybrid recall
   test heterogeneous plants.
 - Every plant has thousands of baseline windows. A data-scarcity experiment
   (shorter baselines) is needed before claiming federation helps small plants.
+
+## LSTM against transformer and classic machine learning
+
+```bash
+pip install -e ".[experiments]"   # XGBoost
+.venv/bin/python scripts/run_comparison.py models --jobs 3
+```
+
+The candidates fall into three categories:
+
+| Category | Candidates | Learns from |
+|---|---|---|
+| Recurrent | LSTM autoencoder (latent 4) | normal baseline windows |
+| Transformer | transformer autoencoder with a latent-4 bottleneck, d_model 32 or 64 | normal baseline windows |
+| Classic | Random Forest, XGBoost (supervised); Isolation Forest (unsupervised) | labelled faults / normal baseline windows |
+
+The autoencoders train federated on the same schedule as above. Classic
+models use summary statistics per sensor and window (mean, sd, min, max, last
+value, change), standardised against each recording's own baseline, so every
+model gets the same baseline information. Settings are fixed in the code, not
+tuned.
+
+Selection uses development recordings only:
+
+- **Model**: highest within-recording AUC on development recordings. For the
+  autoencoders this uses the residual-only score, which is the model's own
+  signal. Supervised models are scored out of fold, holding out whole
+  recordings.
+- **Threshold**: each model gets the predeclared rule, the highest recall with
+  at most 15% false alarms on development recordings.
+
+The classic models run in a separate process. PyTorch and XGBoost load
+different OpenMP runtimes, and on macOS one crashes the other.
+
+### Selection on development recordings
+
+| Category | Model | Needs fault labels | Dev AUC | Selected |
+|---|---|---|---|---|
+| Recurrent | LSTM autoencoder | no | 0.873 | yes |
+| Transformer | transformer, d_model 32 | no | 0.869 | yes |
+| Transformer | transformer, d_model 64 | no | 0.863 | |
+| Classic | Random Forest | yes | 0.923 | |
+| Classic | XGBoost | yes | 0.924 | yes |
+| Classic | Isolation Forest | no | 0.863 | |
+
+Random Forest and XGBoost are effectively tied, and so are the two
+transformers.
+
+### Selected models on final recordings (mean ± sd over seeds 42–44)
+
+| Model | Score | Recall | False alarm rate | Within-recording AUC | Faults detected | Median delay |
+|---|---|---|---|---|---|---|
+| LSTM autoencoder | hybrid | 0.682 ± 0.008 | 0.235 ± 0.007 | 0.845 ± 0.002 | 16.0/17 | 28 s |
+| LSTM autoencoder | residual | 0.487 ± 0.015 | 0.084 ± 0.013 | 0.803 ± 0.020 | 13.7/17 | 36 s |
+| Transformer (d_model 32) | hybrid | 0.638 ± 0.013 | 0.210 ± 0.022 | 0.845 ± 0.001 | 15.7/17 | 40 s |
+| Transformer (d_model 32) | residual | 0.438 ± 0.028 | 0.096 ± 0.027 | 0.776 ± 0.020 | 11.3/17 | 45 s |
+| XGBoost | trained on all fault types | 0.747 ± 0.004 | 0.137 ± 0.009 | 0.862 ± 0.002 | 16.7/17 | 7 s |
+| XGBoost | fault type not seen in training | 0.624 ± 0.004 | 0.098 ± 0.004 | 0.813 ± 0.002 | 16.7/17 | 24 s |
+
+| Model | Parameters | Bytes per federated round |
+|---|---|---|
+| LSTM autoencoder | 104,204 | 4.17 MB |
+| Transformer (d_model 32) | 35,020 | 1.40 MB |
+| XGBoost | 300 trees | cannot be averaged with FedAvg |
+
+The transformer does not beat the LSTM. Its residual AUC is lower (0.776
+against 0.803), and inside the hybrid detector the two are tied. It is about
+a third of the size, so it needs a third of the communication.
+
+XGBoost is the strongest detector here: more recall at fewer false alarms,
+and alerts within seconds. That advantage comes from labels. It learns
+SKAB's faults from labelled development recordings, and the final recordings
+contain the same fault types on the same test rig. When it is tested on a
+fault type it never saw (training on `valve1` and `valve2` faults, testing on
+`other`, and so on), recall drops to 0.62. It still keeps a lower false
+alarm rate than the autoencoders.
+
+What this means for HydroFed:
+
+- The autoencoders need no fault labels. A new plant rarely has labelled
+  faults, so they remain the default detector. Supervised models become an
+  option once a fleet has collected labelled incidents.
+- Tree ensembles cannot be combined with FedAvg. Training XGBoost across
+  plants would need a federated tree protocol, such as histogram-sharing
+  boosting, which HydroFed does not implement. These results are centralised
+  training on pooled labelled data, so they are an upper reference, not a
+  federated option.
+- Isolation Forest, the unsupervised classic model, ranks faults about as well
+  as the LSTM's residuals on development recordings (AUC 0.863 against
+  0.873).
+
+### Limits
+
+- The leave-fault-type-out test uses SKAB's three folders. `other` mixes
+  several fault mechanisms, so it is a coarse test of novelty.
+- Training times in `artifacts/comparison/models.json` were measured with three
+  jobs in parallel on a shared laptop, so treat them as relative only.
+- Each model has one fixed configuration, plus two transformer sizes. A wider
+  search on development recordings could move any of these numbers.
