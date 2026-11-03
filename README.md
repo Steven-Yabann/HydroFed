@@ -50,7 +50,7 @@ The default is two rounds and five clients. Use `scripts/run_experiment.py --rou
 
 `make evaluate` evaluates `plant_1` using its saved threshold. Thresholds are the 95th percentile of reconstruction errors on held-out normal windows. AUC-ROC uses continuous scores; precision, recall, and F1 use the threshold.
 
-[docs/comparison.md](docs/comparison.md) explains how to rerun the SKAB comparisons of federated, centralised and isolated training, and the results.
+[docs/comparison.md](docs/comparison.md) explains how to rerun the SKAB comparisons and gives their results: federated against centralised and isolated training, and the LSTM against transformer and classic models.
 
 ## Monitoring
 

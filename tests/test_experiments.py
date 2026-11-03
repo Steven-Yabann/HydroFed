@@ -13,11 +13,15 @@ from hydrofed.experiments.recordings import (
     plant_training_windows,
     recording_roles,
 )
-from hydrofed.experiments.regimes import federated_average, parameter_bytes, train_regime
+from hydrofed.experiments.regimes import (
+    autoencoder_scores,
+    federated_average,
+    parameter_bytes,
+    train_regime,
+)
 from hydrofed.experiments.scoring import (
     RecordingScores,
     alert_metrics,
-    autoencoder_scores,
     choose_threshold,
     summarise_seeds,
 )

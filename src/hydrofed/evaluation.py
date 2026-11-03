@@ -1,12 +1,12 @@
-"""Anomaly metrics and model evaluation."""
+"""Anomaly metrics and model evaluation.
+
+Model scoring imports PyTorch only when it runs, so the metrics can be used in
+processes that must not load PyTorch, such as XGBoost runs on macOS.
+"""
 from __future__ import annotations
 from collections.abc import Mapping
 import numpy as np
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
-from hydrofed.training.local import (
-    reconstruction_absolute_errors,
-    reconstruction_errors,
-)
 
 def compute_metrics(
     labels: np.ndarray,
@@ -60,6 +60,8 @@ def compute_metrics(
     }
 
 def evaluate_model(model, windows, labels, threshold, device: str = "cpu"):
+    from hydrofed.training.local import reconstruction_errors
+
     scores = reconstruction_errors(model, windows, device=device)
     return compute_metrics(labels, scores, threshold) | {"mean_anomaly_score": float(scores.mean())}
 
@@ -300,6 +302,8 @@ def evaluate_skab_model(
     device: str = "cpu",
 ) -> dict[str, float | None]:
     """Evaluate point-aligned SKAB sequence endpoints with persistence."""
+    from hydrofed.training.local import reconstruction_absolute_errors
+
     scores = reconstruction_absolute_errors(model, windows, device=device)
     return evaluate_skab_scores(
         scores, endpoint_labels, recording_ids, threshold, consecutive_sequences,
