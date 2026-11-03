@@ -6,6 +6,12 @@ regimes
     same inputs, schedule and alert policy, then report detection metrics on
     development and final recordings and the communication each regime needs.
 
+models
+    Compare the LSTM autoencoder with transformer autoencoders and classic
+    machine learning (Random Forest, XGBoost, Isolation Forest). The best
+    candidate in each category is chosen on development recordings, and only
+    the chosen models are reported on final recordings.
+
 Settings were chosen on development recordings. Final recordings are for
 reporting only: do not tune anything on them.
 """
@@ -15,9 +21,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
+import sys
+import tempfile
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from hydrofed.experiments.communication import (
@@ -28,8 +38,12 @@ from hydrofed.experiments.communication import (
 )
 from hydrofed.experiments.recordings import ROLES, load_skab_recordings, plant_training_windows
 from hydrofed.experiments.regimes import REGIMES, SCORES, autoencoder_scores, parameter_bytes, train_regime
-from hydrofed.experiments.scoring import alert_metrics, summarise_seeds
+from hydrofed.experiments.scoring import MAD_THRESHOLDS, alert_metrics, choose_threshold, summarise_seeds
 from hydrofed.models.lstm_autoencoder import build_model
+from hydrofed.models.transformer_autoencoder import build_transformer_model
+
+ARCHITECTURES = {"lstm": build_model, "transformer": build_transformer_model}
+CLASSIC_SUPERVISED = {"random_forest", "xgboost"}
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -58,30 +72,44 @@ def lstm_config(args) -> dict:
     )
 
 
-def regime_job(job: dict) -> dict:
-    """Train and score one regime for one seed. Runs in a worker process."""
+def autoencoder_job(job: dict) -> dict:
+    """Train and score one autoencoder for one seed. Runs in a worker process.
+
+    With a fixed ``threshold`` every score uses it. Without one, each score's
+    threshold is chosen on development recordings by the predeclared rule.
+    """
     args = job["args"]
     torch.set_num_threads(job["threads"])
     recordings = load_skab_recordings(args.partitions, args.scaling)
     plant_windows = plant_training_windows(recordings)
     n_features = next(iter(plant_windows.values())).shape[2]
+    build = ARCHITECTURES[job["architecture"]]
     result = train_regime(
-        job["regime"], plant_windows, lambda: build_model(n_features, lstm_config(args)),
+        job["regime"], plant_windows, lambda: build(n_features, job["config"]),
         rounds=job["rounds"], epochs=args.epochs, batch_size=args.batch_size,
         learning_rate=args.learning_rate, seed=job["seed"], device=args.device,
     )
-    metrics = {}
+    metrics, thresholds = {}, {}
     for score in SCORES:
         scores = autoencoder_scores(
             recordings, result.models, score, args.smoothing, args.calibration_tail, args.device,
         )
+        thresholds[score] = job.get("threshold")
+        if thresholds[score] is None:
+            thresholds[score] = choose_threshold(
+                scores.select("dev"), np.array(MAD_THRESHOLDS),
+                args.max_false_positive_rate, args.persistence,
+            )
         metrics[score] = {
-            role: alert_metrics(scores.select(role), args.mad_multiplier, args.persistence)
+            role: alert_metrics(scores.select(role), thresholds[score], args.persistence)
             for role in ROLES
         }
     print(f"{job['label']} seed {job['seed']}: {result.seconds:.0f}s", flush=True)
+    model = next(iter(result.models.values()))
     return {
-        "label": job["label"], "seed": job["seed"], "metrics": metrics,
+        "label": job["label"], "seed": job["seed"], "metrics": metrics, "thresholds": thresholds,
+        "parameters": model.count_trainable_parameters(),
+        "model_bytes": parameter_bytes(model.get_parameters_numpy()),
         "uplink_bytes": result.uplink_bytes, "downlink_bytes": result.downlink_bytes,
         "seconds": result.seconds,
     }
@@ -91,9 +119,18 @@ def run_jobs(jobs: list[dict], n_jobs: int) -> list[dict]:
     threads = max(1, (os.cpu_count() or 2) // max(1, n_jobs))
     jobs = [job | {"threads": threads} for job in jobs]
     if n_jobs <= 1:
-        return [regime_job(job) for job in jobs]
+        return [autoencoder_job(job) for job in jobs]
     with ProcessPoolExecutor(max_workers=n_jobs) as pool:
-        return list(pool.map(regime_job, jobs))
+        return list(pool.map(autoencoder_job, jobs))
+
+
+def summarise(runs: list[dict], label: str, scores=SCORES) -> dict:
+    """Return mean ± sd per score and role for one label's seeds."""
+    selected = [run for run in runs if run["label"] == label]
+    return {
+        score: {role: summarise_seeds([run["metrics"][score][role] for run in selected]) for role in ROLES}
+        for score in scores
+    }
 
 
 def communication_summary(args, model_bytes: int, clients: int, round_options: list[int]) -> dict:
@@ -120,19 +157,26 @@ def megabytes(value: float) -> str:
     return f"{value / 1e6:.2f} MB"
 
 
+METRIC_HEADER = "Recall | Precision | F1 | False alarm rate | Within-recording AUC | Events | Delay (s)"
+
+
+def metric_cells(m: dict) -> str:
+    def cell(name):
+        return f"{m[name]['mean']:.3f} ± {m[name]['sd']:.3f}" if m[name]["mean"] is not None else "n/a"
+
+    events = f"{m['fault_events_detected']['mean']:.1f}/{m['fault_events']['mean']:.0f}"
+    return (f"{cell('recall')} | {cell('precision')} | {cell('f1')} | {cell('false_positive_rate')} | "
+            f"{cell('macro_recording_auc_roc')} | {events} | {cell('median_detection_delay')}")
+
+
 def print_regime_tables(summary: dict, communication: dict) -> None:
     for score in SCORES:
         for role in ROLES:
             print(f"\n{score} score, {role} recordings (mean ± sd over seeds)")
-            print("| Regime | Recall | Precision | F1 | False alarm rate | Within-recording AUC | Events | Delay (s) |")
-            print("|---|---|---|---|---|---|---|---|")
+            print(f"| Regime | {METRIC_HEADER} |")
+            print("|---" * 8 + "|")
             for label, scores in summary.items():
-                m = scores[score][role]
-                cell = lambda name: f"{m[name]['mean']:.3f} ± {m[name]['sd']:.3f}" if m[name]["mean"] is not None else "n/a"
-                events = f"{m['fault_events_detected']['mean']:.1f}/{m['fault_events']['mean']:.0f}"
-                print(f"| {label} | {cell('recall')} | {cell('precision')} | {cell('f1')} | "
-                      f"{cell('false_positive_rate')} | {cell('macro_recording_auc_roc')} | {events} | "
-                      f"{cell('median_detection_delay')} |")
+                print(f"| {label} | {metric_cells(scores[score][role])} |")
 
     raw = communication["raw_skab"]
     print("\nCommunication")
@@ -154,15 +198,17 @@ def run_regimes(args) -> dict:
             labels[f"federated_{rounds}r"] = ("federated", rounds)
 
     jobs = [
-        {"args": args, "label": label, "regime": regime, "rounds": rounds, "seed": seed}
+        {
+            "args": args, "label": label, "regime": regime, "rounds": rounds, "seed": seed,
+            "architecture": "lstm", "config": lstm_config(args), "threshold": args.mad_multiplier,
+        }
         for label, (regime, rounds) in labels.items()
         for seed in args.seeds
     ]
     runs = run_jobs(jobs, args.jobs)
 
     recordings = load_skab_recordings(args.partitions, args.scaling)
-    n_features = next(iter(recordings.values()))[0].windows.shape[2]
-    model_bytes = parameter_bytes(build_model(n_features, lstm_config(args)).get_parameters_numpy())
+    model_bytes = runs[0]["model_bytes"]
     communication = communication_summary(
         args, model_bytes, len(recordings), sorted({rounds for _, rounds in labels.values()}),
     )
@@ -172,18 +218,126 @@ def run_regimes(args) -> dict:
             if run["uplink_bytes"] + run["downlink_bytes"] != expected["total_bytes"]:
                 raise RuntimeError(f"Measured bytes for {run['label']} do not match the FedAvg formula")
 
-    summary = {
-        label: {
-            score: {
-                role: summarise_seeds([run["metrics"][score][role] for run in runs if run["label"] == label])
-                for role in ROLES
-            }
-            for score in SCORES
-        }
-        for label in labels
-    }
+    summary = {label: summarise(runs, label) for label in labels}
     print_regime_tables(summary, communication)
     return {"runs": runs, "summary": summary, "communication": communication}
+
+
+def deep_candidates(args) -> dict[str, dict[str, tuple[str, dict]]]:
+    """Return autoencoder candidates per category, with fixed settings."""
+    transformer = dict(num_heads=4, num_layers=2, latent_size=args.latent_size, dropout=args.dropout)
+    return {
+        "recurrent": {"lstm_autoencoder": ("lstm", lstm_config(args))},
+        "transformer": {
+            "transformer_autoencoder_d32": ("transformer", transformer | {"d_model": 32, "feedforward_size": 64}),
+            "transformer_autoencoder_d64": ("transformer", transformer | {"d_model": 64, "feedforward_size": 128}),
+        },
+    }
+
+
+def run_classic(args) -> dict:
+    """Run the classic models in a separate process that never loads PyTorch."""
+    with tempfile.TemporaryDirectory() as folder:
+        output = Path(folder) / "classic.json"
+        subprocess.run([
+            sys.executable, "-m", "hydrofed.experiments.classic",
+            "--partitions", args.partitions, "--scaling", args.scaling,
+            "--seeds", *map(str, args.seeds),
+            "--smoothing", str(args.smoothing), "--calibration-tail", str(args.calibration_tail),
+            "--max-false-positive-rate", str(args.max_false_positive_rate),
+            "--output", str(output),
+        ], check=True)
+        return json.loads(output.read_text())
+
+
+def run_models(args) -> dict:
+    candidates = deep_candidates(args)
+    clients = len(list(Path(args.partitions).glob("plant_*.npz")))
+    jobs = [
+        {
+            "args": args, "label": name, "regime": args.regime, "rounds": args.rounds, "seed": seed,
+            "architecture": architecture, "config": config,
+        }
+        for models in candidates.values()
+        for name, (architecture, config) in models.items()
+        for seed in args.seeds
+    ]
+    deep_runs = run_jobs(jobs, args.jobs)
+    print("classic models...", flush=True)
+    classic_runs = run_classic(args)
+
+    # Each candidate's selection score: the model's own residuals for
+    # autoencoders, and the model's output for classic detectors.
+    candidate_rows = {}
+    for category, models in candidates.items():
+        for name in models:
+            runs = [run for run in deep_runs if run["label"] == name]
+            candidate_rows[name] = {
+                "category": category,
+                "needs_fault_labels": False,
+                "parameters": runs[0]["parameters"],
+                "model_bytes": runs[0]["model_bytes"],
+                "federated_bytes_per_round": 2 * runs[0]["model_bytes"] * clients if args.regime == "federated" else 0,
+                "seconds": float(np.mean([run["seconds"] for run in runs])),
+                "summary": summarise(deep_runs, name),
+                "selection_score": "residual",
+            }
+    for name, runs in classic_runs.items():
+        roles = {role: summarise_seeds([run[role] for run in runs]) for role in ROLES}
+        if name in CLASSIC_SUPERVISED:
+            roles["final_unseen_fault_type"] = summarise_seeds([run["final_unseen_fault_type"] for run in runs])
+        candidate_rows[name] = {
+            "category": "classic",
+            "needs_fault_labels": name in CLASSIC_SUPERVISED,
+            "summary": {"model": roles},
+            "selection_score": "model",
+        }
+
+    def dev_auc(name):
+        row = candidate_rows[name]
+        return row["summary"][row["selection_score"]]["dev"]["macro_recording_auc_roc"]["mean"]
+
+    selected = {}
+    for category in ("recurrent", "transformer", "classic"):
+        names = [name for name, row in candidate_rows.items() if row["category"] == category]
+        selected[category] = max(names, key=dev_auc)
+
+    print("\nCandidates on development recordings (selection uses within-recording AUC)")
+    print("| Category | Model | Needs fault labels | Dev AUC | Dev recall | Dev false alarm rate | Selected |")
+    print("|---|---|---|---|---|---|---|")
+    for name, row in candidate_rows.items():
+        dev = row["summary"][row["selection_score"]]["dev"]
+        print(f"| {row['category']} | {name} | {'yes' if row['needs_fault_labels'] else 'no'} | "
+              f"{dev['macro_recording_auc_roc']['mean']:.3f} | {dev['recall']['mean']:.3f} | "
+              f"{dev['false_positive_rate']['mean']:.3f} | {'yes' if selected[row['category']] == name else ''} |")
+
+    print("\nSelected models on final recordings (mean ± sd over seeds)")
+    print(f"| Category | Model | Score | {METRIC_HEADER} |")
+    print("|---" * 10 + "|")
+    for category, name in selected.items():
+        row = candidate_rows[name]
+        for score, results in row["summary"].items():
+            print(f"| {category} | {name} | {score} | {metric_cells(results['final'])} |")
+            if "final_unseen_fault_type" in results:
+                print(f"| {category} | {name} | unseen fault type | "
+                      f"{metric_cells(results['final_unseen_fault_type'])} |")
+
+    print("\nModel size and training cost")
+    for category, name in selected.items():
+        row = candidate_rows[name]
+        if "parameters" in row:
+            print(f"{name}: {row['parameters']:,} parameters, {row['model_bytes']:,} bytes, "
+                  f"{megabytes(row['federated_bytes_per_round'])} per federated round, "
+                  f"{row['seconds']:.0f}s training")
+        else:
+            print(f"{name}: trained centrally on pooled feature windows; cannot be averaged with FedAvg")
+
+    return {
+        "selected": selected,
+        "candidates": candidate_rows,
+        "deep_runs": deep_runs,
+        "classic_runs": classic_runs,
+    }
 
 
 def main() -> None:
@@ -199,13 +353,19 @@ def main() -> None:
     regimes.add_argument("--skab-path", default="data/SKAB")
     regimes.add_argument("--output", default="artifacts/comparison/regimes.json")
 
+    models = commands.add_parser("models", help="LSTM vs transformer vs classic machine learning")
+    add_common_arguments(models)
+    models.add_argument("--regime", choices=REGIMES, default="federated",
+                        help="how the autoencoders are trained; classic models are always central")
+    models.add_argument("--max-false-positive-rate", type=float, default=0.15)
+    models.add_argument("--output", default="artifacts/comparison/models.json")
+
     args = parser.parse_args()
-    result = run_regimes(args)
+    result = run_regimes(args) if args.command == "regimes" else run_models(args)
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    config = {key: value for key, value in vars(args).items()}
-    output.write_text(json.dumps({"config": config} | result, indent=2))
+    output.write_text(json.dumps({"config": vars(args)} | result, indent=2))
     print(f"\nSaved {output}")
 
 
