@@ -34,7 +34,9 @@ class RecordingScores:
     roles: np.ndarray
 
     def select(self, role: str) -> "RecordingScores":
-        mask = self.roles == role
+        return self.where(self.roles == role)
+
+    def where(self, mask: np.ndarray) -> "RecordingScores":
         return RecordingScores(self.scores[mask], self.labels[mask], self.recording_ids[mask], self.roles[mask])
 
 
@@ -80,10 +82,12 @@ def alert_metrics(
     scores: RecordingScores,
     threshold: float,
     consecutive_sequences: int = 1,
+    sequence_seconds: dict[str, float] | None = None,
 ) -> dict[str, float | int | None]:
     """Apply one threshold to calibrated scores and keep the reported metrics."""
     result = evaluate_skab_scores(
         scores.scores, scores.labels, scores.recording_ids, threshold, consecutive_sequences,
+        sequence_seconds,
     )
     return {name: result[name] for name in REPORTED_METRICS}
 
