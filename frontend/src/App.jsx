@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ComparisonWorkspace } from './comparisons'
 import {
   AdministrationWorkspace,
   MaintenanceWorkspace,
@@ -16,7 +17,13 @@ const navigation = [
   { id: 'maintenance', label: 'Anomaly review', role: 'Maintenance engineer' },
   { id: 'administration', label: 'Administration', role: 'System administrator' },
   { id: 'research', label: 'Research', role: 'Researcher' },
+  { id: 'comparisons', label: 'Comparisons', role: 'Researcher' },
 ]
+
+function pageFromHash() {
+  const page = window.location.hash.slice(1)
+  return navigation.some((item) => item.id === page) ? page : 'dashboard'
+}
 
 function formatMetric(value) {
   return typeof value === 'number' ? value.toFixed(3) : '—'
@@ -181,10 +188,12 @@ function App() {
   const [plants, setPlants] = useState([])
   const [runs, setRuns] = useState([])
   const [selectedRunId, setSelectedRunId] = useState('')
-  const [activePage, setActivePage] = useState('dashboard')
+  // The URL hash names the open page, so links like #comparisons can be shared.
+  const [activePage, setActivePage] = useState(pageFromHash)
   const [apiStatus, setApiStatus] = useState('checking')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   const loadDashboard = useCallback(async (requestedRunId = '') => {
     setLoading(true)
@@ -293,6 +302,7 @@ function App() {
     maintenance: <MaintenanceWorkspace {...pageProps} />,
     administration: <AdministrationWorkspace {...pageProps} />,
     research: <ResearchWorkspace {...pageProps} />,
+    comparisons: <ComparisonWorkspace apiBaseUrl={apiBaseUrl} refreshKey={refreshKey} />,
   }
 
   return (
@@ -309,7 +319,14 @@ function App() {
             <span className="connection-dot" />
             API {apiStatus}
           </span>
-          <button type="button" onClick={() => loadDashboard(selectedRunId)} disabled={loading}>
+          <button
+            type="button"
+            onClick={() => {
+              setRefreshKey((key) => key + 1)
+              loadDashboard(selectedRunId)
+            }}
+            disabled={loading}
+          >
             {loading ? 'Refreshing…' : 'Refresh data'}
           </button>
         </div>
@@ -321,7 +338,10 @@ function App() {
             key={item.id}
             type="button"
             className={activePage === item.id ? 'active' : ''}
-            onClick={() => setActivePage(item.id)}
+            onClick={() => {
+              setActivePage(item.id)
+              window.history.replaceState(null, '', `#${item.id}`)
+            }}
           >
             <span>{item.label}</span>
             <small>{item.role}</small>
@@ -329,13 +349,15 @@ function App() {
         ))}
       </nav>
 
-      <RunPicker
-        loading={loading}
-        runs={runs}
-        selectedRun={selectedRun}
-        selectedRunId={selectedRunId}
-        onChange={loadDashboard}
-      />
+      {activePage !== 'comparisons' && (
+        <RunPicker
+          loading={loading}
+          runs={runs}
+          selectedRun={selectedRun}
+          selectedRunId={selectedRunId}
+          onChange={loadDashboard}
+        />
+      )}
 
       {pageContent[activePage]}
     </main>
