@@ -8,9 +8,15 @@ regimes
 
 models
     Compare the LSTM autoencoder with transformer autoencoders and classic
-    machine learning (Random Forest, XGBoost, Isolation Forest). The best
-    candidate in each category is chosen on development recordings, and only
-    the chosen models are reported on final recordings.
+    machine learning (Random Forest, XGBoost, Isolation Forest, and XGBoost
+    trained federatedly with Flower's bagging aggregation). The best candidate
+    in each category is chosen on development recordings, and only the chosen
+    models are reported on final recordings.
+
+publish
+    Save existing comparison results to an experiments database so the
+    dashboard can show them. ``regimes`` and ``models`` can also save directly
+    with ``--db``.
 
 Settings were chosen on development recordings. Final recordings are for
 reporting only: do not tune anything on them.
@@ -36,14 +42,22 @@ from hydrofed.experiments.communication import (
     raw_skab_bytes,
     streaming_bytes_per_day,
 )
+from hydrofed.experiments.publish import (
+    MODEL_EXPERIMENT,
+    REGIME_EXPERIMENT,
+    model_rows,
+    publish,
+    regime_rows,
+)
 from hydrofed.experiments.recordings import ROLES, load_skab_recordings, plant_training_windows
 from hydrofed.experiments.regimes import REGIMES, SCORES, autoencoder_scores, parameter_bytes, train_regime
 from hydrofed.experiments.scoring import MAD_THRESHOLDS, alert_metrics, choose_threshold, summarise_seeds
 from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.models.transformer_autoencoder import build_transformer_model
+from hydrofed.storage import ExperimentStore
 
 ARCHITECTURES = {"lstm": build_model, "transformer": build_transformer_model}
-CLASSIC_SUPERVISED = {"random_forest", "xgboost"}
+CLASSIC_SUPERVISED = {"random_forest", "xgboost", "federated_xgboost"}
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -272,12 +286,16 @@ def run_models(args) -> dict:
     for category, models in candidates.items():
         for name in models:
             runs = [run for run in deep_runs if run["label"] == name]
+            federated = args.regime == "federated"
             candidate_rows[name] = {
                 "category": category,
+                "training": "FedAvg" if federated else args.regime,
                 "needs_fault_labels": False,
                 "parameters": runs[0]["parameters"],
                 "model_bytes": runs[0]["model_bytes"],
-                "federated_bytes_per_round": 2 * runs[0]["model_bytes"] * clients if args.regime == "federated" else 0,
+                "federated_bytes_per_round": 2 * runs[0]["model_bytes"] * clients if federated else 0,
+                "communication_bytes": 2 * runs[0]["model_bytes"] * clients * args.rounds if federated else 0,
+                "rounds": args.rounds,
                 "seconds": float(np.mean([run["seconds"] for run in runs])),
                 "summary": summarise(deep_runs, name),
                 "selection_score": "residual",
@@ -286,21 +304,37 @@ def run_models(args) -> dict:
         roles = {role: summarise_seeds([run[role] for run in runs]) for role in ROLES}
         if name in CLASSIC_SUPERVISED:
             roles["final_unseen_fault_type"] = summarise_seeds([run["final_unseen_fault_type"] for run in runs])
+        federated = name == "federated_xgboost"
         candidate_rows[name] = {
-            "category": "classic",
+            "category": "federated_classic" if federated else "classic",
+            "training": "FedXgbBagging" if federated else "centralised",
             "needs_fault_labels": name in CLASSIC_SUPERVISED,
             "summary": {"model": roles},
             "selection_score": "model",
         }
+        if federated:
+            costs = [run["training"] for run in runs]
+            candidate_rows[name] |= {
+                "clients": costs[0]["clients"],
+                "rounds": costs[0]["rounds"],
+                "trees": costs[0]["trees"],
+                "model_bytes": float(np.mean([cost["model_bytes"] for cost in costs])),
+                "communication_bytes": float(np.mean([
+                    cost["uplink_bytes"] + cost["downlink_bytes"] for cost in costs
+                ])),
+                "uplink_bytes": float(np.mean([cost["uplink_bytes"] for cost in costs])),
+                "downlink_bytes": float(np.mean([cost["downlink_bytes"] for cost in costs])),
+            }
 
     def dev_auc(name):
         row = candidate_rows[name]
         return row["summary"][row["selection_score"]]["dev"]["macro_recording_auc_roc"]["mean"]
 
     selected = {}
-    for category in ("recurrent", "transformer", "classic"):
+    for category in ("recurrent", "transformer", "classic", "federated_classic"):
         names = [name for name, row in candidate_rows.items() if row["category"] == category]
-        selected[category] = max(names, key=dev_auc)
+        if names:
+            selected[category] = max(names, key=dev_auc)
 
     print("\nCandidates on development recordings (selection uses within-recording AUC)")
     print("| Category | Model | Needs fault labels | Dev AUC | Dev recall | Dev false alarm rate | Selected |")
@@ -329,8 +363,11 @@ def run_models(args) -> dict:
             print(f"{name}: {row['parameters']:,} parameters, {row['model_bytes']:,} bytes, "
                   f"{megabytes(row['federated_bytes_per_round'])} per federated round, "
                   f"{row['seconds']:.0f}s training")
+        elif row["training"] == "FedXgbBagging":
+            print(f"{name}: {row['trees']} trees from {row['clients']} plants over {row['rounds']} rounds; "
+                  f"{megabytes(row['uplink_bytes'])} up, {megabytes(row['downlink_bytes'])} down")
         else:
-            print(f"{name}: trained centrally on pooled feature windows; cannot be averaged with FedAvg")
+            print(f"{name}: trained centrally on pooled feature windows")
 
     return {
         "selected": selected,
@@ -356,17 +393,46 @@ def main() -> None:
     models = commands.add_parser("models", help="LSTM vs transformer vs classic machine learning")
     add_common_arguments(models)
     models.add_argument("--regime", choices=REGIMES, default="federated",
-                        help="how the autoencoders are trained; classic models are always central")
+                        help="how the autoencoders are trained; classic models are central, except federated XGBoost")
     models.add_argument("--max-false-positive-rate", type=float, default=0.15)
     models.add_argument("--output", default="artifacts/comparison/models.json")
 
+    for command in (regimes, models):
+        command.add_argument("--db", help="also save the summary to this experiments database")
+
+    publisher = commands.add_parser("publish", help="save existing JSON results for the dashboard")
+    publisher.add_argument("--regimes", help="result of the regimes command")
+    publisher.add_argument("--models", help="result of the models command")
+    publisher.add_argument("--db", default="artifacts/experiments.db")
+
     args = parser.parse_args()
+    if args.command == "publish":
+        sources = {REGIME_EXPERIMENT: (args.regimes, regime_rows), MODEL_EXPERIMENT: (args.models, model_rows)}
+        if not args.regimes and not args.models:
+            parser.error("publish needs --regimes, --models or both")
+        for experiment, (path, rows_for) in sources.items():
+            if path:
+                save_result(args.db, experiment, json.loads(Path(path).read_text()), rows_for)
+        return
+
     result = run_regimes(args) if args.command == "regimes" else run_models(args)
+    result = {"config": vars(args)} | result
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps({"config": vars(args)} | result, indent=2))
+    output.write_text(json.dumps(result, indent=2))
     print(f"\nSaved {output}")
+    if args.db:
+        if args.command == "regimes":
+            save_result(args.db, REGIME_EXPERIMENT, result, regime_rows)
+        else:
+            save_result(args.db, MODEL_EXPERIMENT, result, model_rows)
+
+
+def save_result(db_path: str, experiment: str, result: dict, rows_for) -> None:
+    rows = rows_for(result)
+    run_id = publish(ExperimentStore(db_path), experiment, result["config"], rows)
+    print(f"Saved {len(rows)} {experiment} rows to {db_path} (run {run_id})")
 
 
 if __name__ == "__main__":
