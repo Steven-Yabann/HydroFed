@@ -7,6 +7,10 @@ baseline information, so the comparison is about the model, not the inputs.
 Random Forest and XGBoost are supervised: they learn from labelled faults on
 development recordings. Isolation Forest is unsupervised and, like the
 autoencoders, learns only from normal baseline windows.
+
+Tree ensembles cannot be averaged with FedAvg. Federated XGBoost instead uses
+Flower's bagging aggregation: every round, each plant grows a tree on its own
+data from the current shared model, and the server appends all new trees.
 """
 
 from __future__ import annotations
@@ -26,9 +30,14 @@ from hydrofed.experiments.scoring import (
     concatenate_scores,
 )
 
-SUPERVISED = ("random_forest", "xgboost")
+SUPERVISED = ("random_forest", "xgboost", "federated_xgboost")
 UNSUPERVISED = ("isolation_forest",)
 CLASSIC_MODELS = SUPERVISED + UNSUPERVISED
+
+# Shared by centralised and federated XGBoost so only the training differs.
+XGBOOST_SETTINGS = dict(max_depth=4, learning_rate=0.05, subsample=0.8, colsample_bytree=0.8)
+XGBOOST_TREES = 300
+FEDERATED_XGBOOST_ROUNDS = 60
 
 
 def window_features(windows: np.ndarray) -> np.ndarray:
@@ -65,10 +74,89 @@ def build_classifier(name: str, seed: int):
         except ImportError as error:
             raise ImportError('XGBoost needs: pip install -e ".[experiments]"') from error
         return XGBClassifier(
-            n_estimators=300, max_depth=4, learning_rate=0.05, subsample=0.8,
-            colsample_bytree=0.8, n_jobs=-1, random_state=seed, eval_metric="logloss",
+            n_estimators=XGBOOST_TREES, n_jobs=-1, random_state=seed, eval_metric="logloss",
+            **XGBOOST_SETTINGS,
         )
     raise ValueError(f"Unknown supervised model {name!r}")
+
+
+def train_federated_xgboost(
+    plant_data: dict[str, tuple[np.ndarray, np.ndarray]],
+    seed: int,
+    rounds: int = FEDERATED_XGBOOST_ROUNDS,
+):
+    """Train XGBoost across plants with Flower's FedXgbBagging aggregation.
+
+    Each round, every plant loads the shared model, boosts one tree on its own
+    features and labels, and uploads only that tree. The server appends the
+    new trees to the shared model and sends it back next round. Raw data never
+    leaves a plant. Bytes are the serialised JSON models that Flower would
+    exchange: one tree per plant up, the whole shared model down.
+    """
+    import xgboost as xgb
+    from flwr.server.strategy.fedxgb_bagging import aggregate
+
+    if rounds <= 0 or not plant_data:
+        raise ValueError("federated XGBoost needs positive rounds and at least one plant")
+
+    params = {
+        "objective": "binary:logistic", "eval_metric": "logloss", "base_score": 0.5,
+        "eta": XGBOOST_SETTINGS["learning_rate"], "max_depth": XGBOOST_SETTINGS["max_depth"],
+        "subsample": XGBOOST_SETTINGS["subsample"],
+        "colsample_bytree": XGBOOST_SETTINGS["colsample_bytree"], "nthread": 1,
+    }
+    matrices = {plant: xgb.DMatrix(features, label=labels) for plant, (features, labels) in plant_data.items()}
+    shared, uplink, downlink = None, 0, 0
+
+    for round_index in range(rounds):
+        new_trees = []
+        for plant_index, matrix in enumerate(matrices.values()):
+            local_params = params | {"seed": seed + plant_index + round_index * 100}
+            start = None
+            if shared is not None:
+                downlink += len(shared)
+                start = xgb.Booster(params=local_params)
+                start.load_model(bytearray(shared))
+            booster = xgb.train(local_params, matrix, num_boost_round=1, xgb_model=start)
+            trees = booster.num_boosted_rounds()
+            new_trees.append(bytes(booster[trees - 1:trees].save_raw("json")))
+            uplink += len(new_trees[-1])
+        for tree in new_trees:
+            shared = aggregate(shared, tree)
+
+    model = xgb.Booster()
+    model.load_model(bytearray(shared))
+    return model, {
+        "clients": len(matrices), "rounds": rounds, "trees": model.num_boosted_rounds(),
+        "model_bytes": len(shared), "uplink_bytes": uplink, "downlink_bytes": downlink,
+    }
+
+
+def fit_supervised(name: str, train_recordings: list[SkabRecording], seed: int):
+    """Train a supervised model and return its fault-probability function.
+
+    Also returns what training cost: the federated model reports the bytes
+    it exchanged. Federated XGBoost groups recordings by plant, and plants
+    without labelled windows do not take part.
+    """
+    if name == "federated_xgboost":
+        import xgboost as xgb
+
+        plant_data = {}
+        for plant in dict.fromkeys(recording.plant for recording in train_recordings):
+            recordings = [
+                recording for recording in train_recordings
+                if recording.plant == plant and recording.test_mask.any()
+            ]
+            if recordings:
+                features, labels, _ = labelled_windows(recordings)
+                plant_data[plant] = (features, labels)
+        model, cost = train_federated_xgboost(plant_data, seed)
+        return lambda features: model.predict(xgb.DMatrix(features)), cost
+
+    features, labels, _ = labelled_windows(train_recordings)
+    model = build_classifier(name, seed).fit(features, labels)
+    return lambda features: model.predict_proba(features)[:, 1], {}
 
 
 def labelled_windows(recordings: list[SkabRecording]):
@@ -107,12 +195,16 @@ def supervised_scores(
     seed: int,
 ) -> RecordingScores:
     """Train on labelled recordings and return fault probabilities for others."""
-    features, labels, _ = labelled_windows(train_recordings)
-    model = build_classifier(name, seed).fit(features, labels)
-    return _scores_from_probabilities(
+    return _supervised_scores_and_cost(name, train_recordings, test_recordings, seed)[0]
+
+
+def _supervised_scores_and_cost(name, train_recordings, test_recordings, seed):
+    predict, cost = fit_supervised(name, train_recordings, seed)
+    scores = _scores_from_probabilities(
         test_recordings,
-        lambda recording: model.predict_proba(recording_features(recording, recording.test_windows))[:, 1],
+        lambda recording: predict(recording_features(recording, recording.test_windows)),
     )
+    return scores, cost
 
 
 def supervised_cross_validated_scores(
@@ -184,7 +276,7 @@ def evaluate_classic_model(
         candidates = MAD_THRESHOLDS
     elif name in SUPERVISED:
         dev_scores = supervised_cross_validated_scores(name, dev, seed)
-        final_scores = supervised_scores(name, dev, final, seed)
+        final_scores, cost = _supervised_scores_and_cost(name, dev, final, seed)
         candidates = PROBABILITY_THRESHOLDS
     else:
         raise ValueError(f"Unknown classic model {name!r}")
@@ -195,6 +287,8 @@ def evaluate_classic_model(
         "dev": alert_metrics(dev_scores, threshold),
         "final": alert_metrics(final_scores, threshold),
     }
+    if name in SUPERVISED and cost:
+        result["training"] = cost
 
     if name in SUPERVISED:
         unseen = []

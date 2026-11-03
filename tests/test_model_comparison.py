@@ -171,11 +171,47 @@ def test_classic_runner_evaluates_every_model_in_its_own_process(tmp_path):
     ], check=True)
 
     results = json.loads(output.read_text())
-    assert set(results) == {"random_forest", "xgboost", "isolation_forest"}
-    for name in ("random_forest", "xgboost"):
+    assert set(results) == {"random_forest", "xgboost", "federated_xgboost", "isolation_forest"}
+    for name in ("random_forest", "xgboost", "federated_xgboost"):
         assert results[name][0]["final"]["macro_recording_auc_roc"] > 0.8
         assert "final_unseen_fault_type" in results[name][0]
     assert "final_unseen_fault_type" not in results["isolation_forest"][0]
+    assert results["federated_xgboost"][0]["training"]["uplink_bytes"] > 0
+    assert "training" not in results["xgboost"][0]
+
+
+FEDERATED_XGBOOST_CHECK = """
+import json
+import numpy as np
+from hydrofed.experiments.classic import train_federated_xgboost
+import xgboost as xgb
+
+rng = np.random.default_rng(0)
+plants = {}
+for index in range(3):
+    features = rng.normal(size=(300, 4))
+    plants[f"plant_{index}"] = (features, (features[:, 0] > 0.5).astype(int))
+model, cost = train_federated_xgboost(plants, seed=0, rounds=4)
+test = rng.normal(size=(500, 4))
+accuracy = float(((model.predict(xgb.DMatrix(test)) > 0.5) == (test[:, 0] > 0.5)).mean())
+print(json.dumps(cost | {"accuracy": accuracy}))
+"""
+
+
+def test_federated_xgboost_appends_one_tree_per_plant_per_round():
+    pytest.importorskip("xgboost")
+
+    output = subprocess.run(
+        [sys.executable, "-c", FEDERATED_XGBOOST_CHECK], capture_output=True, text=True, check=True,
+    ).stdout
+    cost = json.loads(output.strip().splitlines()[-1])
+
+    assert cost["clients"] == 3 and cost["rounds"] == 4
+    assert cost["trees"] == 3 * 4
+    # Plants download the shared model from round two onward and upload one tree every round.
+    assert 0 < cost["uplink_bytes"] < cost["downlink_bytes"]
+    assert cost["model_bytes"] < cost["downlink_bytes"]
+    assert cost["accuracy"] > 0.9
 
 
 def test_cross_validation_never_scores_a_recording_it_trained_on(recordings, monkeypatch):
