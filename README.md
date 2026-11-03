@@ -50,6 +50,8 @@ The default is two rounds and five clients. Use `scripts/run_experiment.py --rou
 
 `make evaluate` evaluates `plant_1` using its saved threshold. Thresholds are the 95th percentile of reconstruction errors on held-out normal windows. AUC-ROC uses continuous scores; precision, recall, and F1 use the threshold.
 
+[docs/comparison.md](docs/comparison.md) explains how to rerun the SKAB comparisons and gives their results: federated against centralised and isolated training, and the LSTM against transformer and classic models.
+
 ## Monitoring
 
 Start a process which imports `hydrofed.monitoring` and calls `serve(8000)`, then run `make monitor-up`. Prometheus is at port 9090 and Grafana at port 3000. Run `make monitor-down` afterward. The dashboard covers losses, anomaly score, communication bytes, and F1; no cloud deployment is included.

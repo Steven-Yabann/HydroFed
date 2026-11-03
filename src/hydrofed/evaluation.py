@@ -1,12 +1,12 @@
-"""Anomaly metrics and model evaluation."""
+"""Anomaly metrics and model evaluation.
+
+Model scoring imports PyTorch only when it runs, so the metrics can be used in
+processes that must not load PyTorch, such as XGBoost runs on macOS.
+"""
 from __future__ import annotations
 from collections.abc import Mapping
 import numpy as np
 from sklearn.metrics import precision_recall_fscore_support, roc_auc_score
-from hydrofed.training.local import (
-    reconstruction_absolute_errors,
-    reconstruction_errors,
-)
 
 def compute_metrics(
     labels: np.ndarray,
@@ -60,6 +60,8 @@ def compute_metrics(
     }
 
 def evaluate_model(model, windows, labels, threshold, device: str = "cpu"):
+    from hydrofed.training.local import reconstruction_errors
+
     scores = reconstruction_errors(model, windows, device=device)
     return compute_metrics(labels, scores, threshold) | {"mean_anomaly_score": float(scores.mean())}
 
@@ -179,6 +181,81 @@ def exponential_smoothing(scores: np.ndarray, alpha: float) -> np.ndarray:
     return smoothed
 
 
+def _baseline_zscores(
+    baseline: np.ndarray,
+    values: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return robust z-scores of baseline and test rows for one component.
+
+    Two-dimensional components are per-sensor features, reduced with a
+    Mahalanobis distance from the baseline. One-dimensional components are
+    already anomaly scores, such as an Isolation Forest output.
+    """
+    if baseline.ndim == 1:
+        return robust_zscores(baseline, baseline), robust_zscores(values, baseline)
+    baseline_distances = mahalanobis_scores(baseline, baseline)
+    return (
+        robust_zscores(baseline_distances, baseline_distances),
+        robust_zscores(mahalanobis_scores(values, baseline), baseline_distances),
+    )
+
+
+def calibrated_recording_scores(
+    train_components: list[np.ndarray],
+    train_recording_ids: np.ndarray,
+    test_components: list[np.ndarray],
+    test_recording_ids: np.ndarray,
+    smoothing: float = 0.2,
+    calibration_tail: float = 0.25,
+) -> np.ndarray:
+    """Score sequences in MAD units of each recording's own normal baseline.
+
+    Every component is compared with the recording's baseline and converted to
+    a robust z-score. The largest component is smoothed, then centred on the
+    median of the last part of the baseline and divided by its MAD. A
+    threshold of ``k`` on the returned scores therefore means median + k MAD
+    of recent normal behaviour, whichever model produced the components. Test
+    labels are not used. Recordings without baseline windows are not scored.
+    """
+    if not train_components or len(train_components) != len(test_components):
+        raise ValueError("train and test components must align and not be empty")
+    if not 0 < calibration_tail <= 1:
+        raise ValueError("calibration_tail must be in (0, 1]")
+
+    train_recording_ids = np.asarray(train_recording_ids)
+    test_recording_ids = np.asarray(test_recording_ids)
+    train_components = [np.asarray(values, dtype=float) for values in train_components]
+    test_components = [np.asarray(values, dtype=float) for values in test_components]
+    test_scores = np.full(len(test_recording_ids), -np.inf)
+
+    for recording_id in dict.fromkeys(train_recording_ids.tolist()):
+        train_mask = train_recording_ids == recording_id
+        test_mask = test_recording_ids == recording_id
+        baseline_scores, scores = zip(*(
+            _baseline_zscores(train[train_mask], test[test_mask])
+            for train, test in zip(train_components, test_components)
+        ))
+
+        # The smoother runs through the baseline so scoring starts from a
+        # settled state, as it would on a live sensor stream.
+        smoothed = exponential_smoothing(
+            np.concatenate((
+                np.maximum.reduce(baseline_scores),
+                np.maximum.reduce(scores),
+            )),
+            smoothing,
+        )
+        n_train = int(train_mask.sum())
+        calibration = smoothed[
+            n_train - max(1, int(np.ceil(n_train * calibration_tail))):n_train
+        ]
+        median = np.median(calibration)
+        spread = 1.4826 * np.median(np.abs(calibration - median)) + 1e-6
+        test_scores[test_mask] = (smoothed[n_train:] - median) / spread
+
+    return test_scores
+
+
 def hybrid_recording_scores(
     train_levels: np.ndarray,
     train_residuals: np.ndarray,
@@ -195,55 +272,23 @@ def hybrid_recording_scores(
     Two complementary distances are combined, as in SKAB's T-squared+Q
     detector: how far sensor levels sit from the baseline, and how far the
     model's residuals do. The threshold comes from the last part of the
-    baseline, which approximates the most recent normal behaviour. Test labels
-    are not used. Recordings without baseline windows are not scored.
+    baseline, which approximates the most recent normal behaviour.
     """
     if mad_multiplier <= 0:
         raise ValueError("mad_multiplier must be positive")
-    if not 0 < calibration_tail <= 1:
-        raise ValueError("calibration_tail must be in (0, 1]")
 
-    train_recording_ids = np.asarray(train_recording_ids)
-    test_recording_ids = np.asarray(test_recording_ids)
-    test_scores = np.full(len(test_recording_ids), -np.inf)
-    thresholds = {}
-
-    for recording_id in dict.fromkeys(train_recording_ids.tolist()):
-        train_mask = train_recording_ids == recording_id
-        test_mask = test_recording_ids == recording_id
-        baseline_levels = train_levels[train_mask]
-        baseline_residuals = train_residuals[train_mask]
-
-        def combined(levels, residuals):
-            return np.maximum(
-                robust_zscores(
-                    mahalanobis_scores(levels, baseline_levels),
-                    mahalanobis_scores(baseline_levels, baseline_levels),
-                ),
-                robust_zscores(
-                    mahalanobis_scores(residuals, baseline_residuals),
-                    mahalanobis_scores(baseline_residuals, baseline_residuals),
-                ),
-            )
-
-        # The smoother runs through the baseline so scoring starts from a
-        # settled state, as it would on a live sensor stream.
-        smoothed = exponential_smoothing(
-            np.concatenate((
-                combined(baseline_levels, baseline_residuals),
-                combined(test_levels[test_mask], test_residuals[test_mask]),
-            )),
-            smoothing,
-        )
-        n_train = int(train_mask.sum())
-        calibration = smoothed[
-            n_train - max(1, int(np.ceil(n_train * calibration_tail))):n_train
-        ]
-        median = np.median(calibration)
-        spread = 1.4826 * np.median(np.abs(calibration - median)) + 1e-6
-        thresholds[str(recording_id)] = float(median + mad_multiplier * spread)
-        test_scores[test_mask] = smoothed[n_train:]
-
+    test_scores = calibrated_recording_scores(
+        [train_levels, train_residuals],
+        train_recording_ids,
+        [test_levels, test_residuals],
+        test_recording_ids,
+        smoothing,
+        calibration_tail,
+    )
+    thresholds = {
+        str(recording_id): float(mad_multiplier)
+        for recording_id in dict.fromkeys(np.asarray(train_recording_ids).tolist())
+    }
     return test_scores, thresholds
 
 
@@ -257,6 +302,8 @@ def evaluate_skab_model(
     device: str = "cpu",
 ) -> dict[str, float | None]:
     """Evaluate point-aligned SKAB sequence endpoints with persistence."""
+    from hydrofed.training.local import reconstruction_absolute_errors
+
     scores = reconstruction_absolute_errors(model, windows, device=device)
     return evaluate_skab_scores(
         scores, endpoint_labels, recording_ids, threshold, consecutive_sequences,
@@ -287,6 +334,41 @@ def macro_recording_auc_roc(
         if len(np.unique(labels[recording_ids == recording_id])) == 2
     ]
     return float(np.mean(values)) if values else None
+
+
+def fault_event_detection(
+    labels: np.ndarray,
+    predicted: np.ndarray,
+    recording_ids: np.ndarray,
+) -> dict[str, float | int | None]:
+    """Count detected faults and the delay to their first alert.
+
+    SKAB recordings contain one fault each. A fault counts as detected when an
+    alert fires between its first and last anomalous endpoint, and the delay
+    is measured in sequences from its first anomalous endpoint. Sequences are
+    one second apart in HydroFed's SKAB partitions.
+    """
+    labels, predicted = np.asarray(labels), np.asarray(predicted)
+    recording_ids = np.asarray(recording_ids)
+    events = detected = 0
+    delays = []
+
+    for recording_id in dict.fromkeys(recording_ids.tolist()):
+        mask = recording_ids == recording_id
+        anomalous = np.flatnonzero(labels[mask])
+        if not len(anomalous):
+            continue
+        events += 1
+        alerts = np.flatnonzero(predicted[mask][anomalous[0]:anomalous[-1] + 1])
+        if len(alerts):
+            detected += 1
+            delays.append(int(alerts[0]))
+
+    return {
+        "fault_events": events,
+        "fault_events_detected": detected,
+        "median_detection_delay": float(np.median(delays)) if delays else None,
+    }
 
 
 def evaluate_skab_scores(
@@ -322,6 +404,7 @@ def evaluate_skab_scores(
             endpoint_labels,
             recording_ids,
         ),
+        **fault_event_detection(endpoint_labels, predicted, recording_ids),
         "mean_anomaly_score": float(scores.mean()),
         "consecutive_sequences": int(consecutive_sequences),
         **threshold_details,
