@@ -58,6 +58,37 @@ class WindowMinMaxScaler:
         return ((array - self.minimums) / self.spans).astype(np.float32)
 
 
+@dataclass(frozen=True)
+class WindowStandardScaler:
+    """Feature-wise standard scaler fitted to training telemetry windows."""
+
+    means: np.ndarray
+    standard_deviations: np.ndarray
+
+    @classmethod
+    def fit(cls, windows: np.ndarray) -> "WindowStandardScaler":
+        array = _validate_windows(windows)
+        means = array.mean(axis=(0, 1))
+        standard_deviations = array.std(axis=(0, 1))
+        standard_deviations = np.where(
+            standard_deviations == 0,
+            1.0,
+            standard_deviations,
+        ).astype(np.float32)
+        return cls(
+            means=means.astype(np.float32),
+            standard_deviations=standard_deviations,
+        )
+
+    def transform(self, windows: np.ndarray) -> np.ndarray:
+        array = _validate_windows(windows)
+        if array.shape[2] != len(self.means):
+            raise ValueError(
+                "windows have a different number of features than the fitted scaler"
+            )
+        return ((array - self.means) / self.standard_deviations).astype(np.float32)
+
+
 def fit_shared_window_scaler(
     training_windows: Iterable[np.ndarray],
 ) -> WindowMinMaxScaler:
@@ -74,9 +105,21 @@ def fit_shared_window_scaler(
     return WindowMinMaxScaler.fit(np.concatenate(arrays, axis=0))
 
 
+def fit_shared_standard_window_scaler(
+    training_windows: Iterable[np.ndarray],
+) -> WindowStandardScaler:
+    """Fit shared SKAB-style standardization from training windows only."""
+    arrays = [_validate_windows(windows) for windows in training_windows]
+    if not arrays:
+        raise ValueError("at least one plant training window array is required")
+    if len({array.shape[2] for array in arrays}) != 1:
+        raise ValueError("all plant windows must have the same number of features")
+    return WindowStandardScaler.fit(np.concatenate(arrays, axis=0))
+
+
 def scale_plant_split(
     plant_split: PlantDataSplit,
-    scaler: WindowMinMaxScaler,
+    scaler: WindowMinMaxScaler | WindowStandardScaler,
 ) -> PlantDataSplit:
     """Apply one fitted scaler to every portion of one plant's data."""
     return PlantDataSplit(
@@ -84,4 +127,6 @@ def scale_plant_split(
         calibration_windows=scaler.transform(plant_split.calibration_windows),
         test_windows=scaler.transform(plant_split.test_windows),
         test_labels=plant_split.test_labels,
+        train_recording_ids=plant_split.train_recording_ids,
+        test_recording_ids=plant_split.test_recording_ids,
     )

@@ -62,6 +62,8 @@ def train_epochs(
 
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
+    if learning_rate <= 0:
+        raise ValueError("learning_rate must be positive")
 
     dataset = PlantDataset(train_windows)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -114,6 +116,57 @@ def reconstruction_errors(
         for batch in loader:
             scores.append(model.reconstruction_errors(batch.to(device)).cpu().numpy())
     return np.concatenate(scores).astype(np.float64)
+
+
+def reconstruction_absolute_errors(
+    model: LSTMAutoencoder,
+    windows: np.ndarray,
+    batch_size: int = 256,
+    device: str = "cpu",
+) -> np.ndarray:
+    """Return the SKAB-style absolute reconstruction score for each sequence.
+
+    For each sequence, SKAB averages absolute error across time for every
+    sensor, then sums those sensor-level errors into one anomaly score.
+    """
+    loader = DataLoader(PlantDataset(windows), batch_size=batch_size, shuffle=False)
+    model.to(device)
+    model.eval()
+    scores: list[np.ndarray] = []
+
+    with torch.no_grad():
+        for batch in loader:
+            batch = batch.to(device)
+            reconstruction = model(batch)
+            score = torch.abs(batch - reconstruction).mean(dim=1).sum(dim=1)
+            scores.append(score.cpu().numpy())
+
+    return np.concatenate(scores).astype(np.float64)
+
+
+def reconstruction_signed_residuals(
+    model: LSTMAutoencoder,
+    windows: np.ndarray,
+    batch_size: int = 256,
+    device: str = "cpu",
+) -> np.ndarray:
+    """Return each sequence's mean signed residual per sensor.
+
+    Keeping the sign and the sensors separate matters for SKAB faults, which
+    often move one sensor only. An absolute error summed across sensors can
+    dilute that movement, or shrink when a fault cancels an existing offset.
+    """
+    loader = DataLoader(PlantDataset(windows), batch_size=batch_size, shuffle=False)
+    model.to(device)
+    model.eval()
+    residuals: list[np.ndarray] = []
+
+    with torch.no_grad():
+        for batch in loader:
+            batch = batch.to(device)
+            residuals.append((batch - model(batch)).mean(dim=1).cpu().numpy())
+
+    return np.concatenate(residuals).astype(np.float64)
 
 
 def calibrate_threshold(errors: np.ndarray, percentile: float = 95.0) -> float:

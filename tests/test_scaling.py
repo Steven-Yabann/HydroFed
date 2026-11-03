@@ -3,6 +3,8 @@ import pytest
 
 from hydrofed.data.scaling import (
     WindowMinMaxScaler,
+    WindowStandardScaler,
+    fit_shared_standard_window_scaler,
     fit_shared_window_scaler,
     scale_plant_split,
 )
@@ -47,6 +49,23 @@ def test_window_scaler_rejects_feature_count_mismatch():
         scaler.transform(np.ones((2, 3, 2), dtype=np.float32))
 
 
+def test_shared_standard_scaler_uses_training_mean_and_standard_deviation():
+    plant_one = np.array([[[0.0], [2.0]]], dtype=np.float32)
+    plant_two = np.array([[[4.0], [6.0]]], dtype=np.float32)
+
+    scaler = fit_shared_standard_window_scaler([plant_one, plant_two])
+
+    np.testing.assert_allclose(scaler.means, [3.0])
+    np.testing.assert_allclose(scaler.standard_deviations, [np.sqrt(5.0)])
+    np.testing.assert_allclose(scaler.transform(plant_two), [[[1 / np.sqrt(5)], [3 / np.sqrt(5)]]])
+
+
+def test_standard_scaler_handles_constant_sensor():
+    scaler = WindowStandardScaler.fit(np.ones((2, 3, 1), dtype=np.float32))
+
+    np.testing.assert_allclose(scaler.transform(np.ones((1, 2, 1))), 0.0)
+
+
 def test_scale_plant_split_uses_the_same_training_scaler_for_held_out_data():
     scaler = WindowMinMaxScaler.fit(np.array([[[0.0], [10.0]]], dtype=np.float32))
     split = PlantDataSplit(
@@ -54,6 +73,8 @@ def test_scale_plant_split_uses_the_same_training_scaler_for_held_out_data():
         calibration_windows=np.array([[[5.0], [10.0]]], dtype=np.float32),
         test_windows=np.array([[[15.0], [20.0]]], dtype=np.float32),
         test_labels=np.array([0], dtype=np.int64),
+        train_recording_ids=np.array(["recording_a"]),
+        test_recording_ids=np.array(["recording_b"]),
     )
 
     scaled = scale_plant_split(split, scaler)
@@ -61,3 +82,5 @@ def test_scale_plant_split_uses_the_same_training_scaler_for_held_out_data():
     np.testing.assert_allclose(scaled.calibration_windows, [[[0.5], [1.0]]])
     np.testing.assert_allclose(scaled.test_windows, [[[1.5], [2.0]]])
     np.testing.assert_array_equal(scaled.test_labels, split.test_labels)
+    np.testing.assert_array_equal(scaled.train_recording_ids, split.train_recording_ids)
+    np.testing.assert_array_equal(scaled.test_recording_ids, split.test_recording_ids)

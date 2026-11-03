@@ -177,11 +177,30 @@ def partition_stratified_iid(
 
     return partitions
 
-def save_partitions(partitions: dict[str, tuple[np.ndarray, np.ndarray]], output: str | Path) -> Path:
+def save_partitions(
+    partitions: dict[str, tuple[np.ndarray, np.ndarray]],
+    output: str | Path,
+    metadata: dict[str, dict[str, np.ndarray]] | None = None,
+) -> Path:
+    """Save client windows, labels, and optional per-window provenance."""
     directory = Path(output); directory.mkdir(parents=True, exist_ok=True)
     summary = {}
     for client_id, (windows, labels) in partitions.items():
-        np.savez_compressed(directory / f"{client_id}.npz", windows=windows, labels=labels)
+        client_metadata = (metadata or {}).get(client_id, {})
+
+        for name, values in client_metadata.items():
+            if len(values) != len(windows):
+                raise ValueError(
+                    f"metadata field {name!r} for {client_id} must have one "
+                    "value per window"
+                )
+
+        np.savez_compressed(
+            directory / f"{client_id}.npz",
+            windows=windows,
+            labels=labels,
+            **client_metadata,
+        )
         summary[client_id] = {"windows": int(len(windows)), "anomalies": int(labels.sum()),
                               "anomaly_rate": float(labels.mean()) if len(labels) else 0.0}
     path = directory / "partition_summary.json"
@@ -347,6 +366,34 @@ def create_windows_with_recording_ids(
     label_mode: str = "any",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Create windows within recordings and retain each window's source ID."""
+    windows, window_labels, window_recording_ids, _ = (
+        create_windows_with_endpoint_metadata(
+            features,
+            labels,
+            recording_ids,
+            window_length,
+            stride,
+            label_mode,
+        )
+    )
+    return windows, window_labels, window_recording_ids
+
+
+def create_windows_with_endpoint_metadata(
+    features: np.ndarray,
+    labels: np.ndarray,
+    recording_ids: np.ndarray,
+    window_length: int,
+    stride: int = 1,
+    label_mode: str = "any",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, np.ndarray]]:
+    """Create recording-safe windows and retain their final-point provenance.
+
+    ``labels`` is the existing window label used for the operational protocol.
+    ``endpoint_labels`` is the original point-level SKAB label at the last
+    timestamp in each window. It lets the SKAB protocol score a sequence while
+    evaluating the matching physical observation.
+    """
     if len(features) != len(labels) or len(features) != len(recording_ids):
         raise ValueError(
             "features, labels, and recording_ids must have the same length"
@@ -355,6 +402,8 @@ def create_windows_with_recording_ids(
     window_sets = []
     label_sets = []
     window_recording_sets = []
+    endpoint_label_sets = []
+    start_index_sets = []
 
     for recording_id in pd.unique(recording_ids):
         mask = recording_ids == recording_id
@@ -375,8 +424,13 @@ def create_windows_with_recording_ids(
         window_sets.append(windows)
         label_sets.append(window_labels)
         window_recording_sets.append(
-            np.full(len(windows), recording_id, dtype=object)
+            np.repeat(str(recording_id), len(windows))
         )
+        starts = np.arange(0, len(recording_features) - window_length + 1, stride)
+        endpoint_label_sets.append(
+            recording_labels[starts + window_length - 1].astype(np.int64)
+        )
+        start_index_sets.append(starts.astype(np.int64))
 
     if not window_sets:
         raise ValueError("No recording contains enough rows for one full window")
@@ -385,6 +439,10 @@ def create_windows_with_recording_ids(
         np.concatenate(window_sets),
         np.concatenate(label_sets),
         np.concatenate(window_recording_sets),
+        {
+            "endpoint_labels": np.concatenate(endpoint_label_sets),
+            "window_start_indices": np.concatenate(start_index_sets),
+        },
     )
 
 
@@ -410,3 +468,18 @@ def create_windows_by_recording(
 def load_client_partition(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     with np.load(path) as data:
         return data["windows"].astype(np.float32), data["labels"].astype(np.int64)
+
+
+def load_client_partition_metadata(path: str | Path) -> dict[str, np.ndarray]:
+    """Load optional per-window provenance stored with a client partition."""
+    metadata_fields = (
+        "recording_ids",
+        "endpoint_labels",
+        "window_start_indices",
+    )
+    with np.load(path) as data:
+        return {
+            field: data[field]
+            for field in metadata_fields
+            if field in data.files
+        }

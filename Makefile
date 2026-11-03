@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: setup test data partition partition-synthetic baseline federated evaluate monitor-up monitor-down
+.PHONY: setup test data partition partition-skab partition-synthetic baseline federated evaluate monitor-up monitor-down
 
 setup:
 	python3.11 -m venv .venv
@@ -19,6 +19,8 @@ data:
 	$(PYTHON) src/hydrofed/data/pipeline.py
 partition:
 	$(PYTHON) scripts/prepare_data.py --download --input data/SKAB --output data/partitions --partition-strategy temporal --minimum-anomalies 100
+partition-skab:
+	$(PYTHON) scripts/prepare_data.py --download --input data/SKAB --output data/partitions_skab --window 10 --stride 1 --partition-strategy temporal --minimum-anomalies 100
 partition-synthetic:
 	$(PYTHON) scripts/prepare_data.py --synthetic --output data/partitions
 baseline:
