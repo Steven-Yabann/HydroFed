@@ -16,10 +16,13 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from hydrofed.experiments.recordings import SkabRecording
+from hydrofed.experiments.scoring import RecordingScores, calibrate_components, concatenate_scores
 from hydrofed.reproducibility import set_random_seed
-from hydrofed.training.local import train_epochs
+from hydrofed.training.local import reconstruction_signed_residuals, train_epochs
 
 REGIMES = ("federated", "centralised", "isolated")
+SCORES = ("hybrid", "residual")
 
 
 @dataclass
@@ -146,3 +149,31 @@ def train_regime(
     for plant, windows in plant_windows.items():
         models[plant], histories[plant], *_ = run_fedavg({plant: windows}, **options)
     return RegimeResult(regime, models, histories, seconds=time.perf_counter() - start)
+
+
+def autoencoder_scores(
+    recordings: dict[str, list[SkabRecording]],
+    models: dict,
+    score: str = "hybrid",
+    smoothing: float = 0.2,
+    calibration_tail: float = 0.25,
+    device: str = "cpu",
+) -> RecordingScores:
+    """Score every plant's recordings with that plant's autoencoder.
+
+    ``residual`` uses only the model's signed residuals. ``hybrid`` also
+    measures how far sensor levels sit from the baseline, which needs no model.
+    """
+    if score not in SCORES:
+        raise ValueError(f"score must be one of {SCORES}")
+
+    def components_for(model):
+        def components(recording, windows):
+            residuals = reconstruction_signed_residuals(model, windows, device=device)
+            return [windows.mean(axis=1), residuals] if score == "hybrid" else [residuals]
+        return components
+
+    return concatenate_scores([
+        calibrate_components(items, components_for(models[plant]), smoothing, calibration_tail)
+        for plant, items in recordings.items()
+    ])

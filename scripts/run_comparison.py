@@ -27,8 +27,8 @@ from hydrofed.experiments.communication import (
     streaming_bytes_per_day,
 )
 from hydrofed.experiments.recordings import ROLES, load_skab_recordings, plant_training_windows
-from hydrofed.experiments.regimes import REGIMES, parameter_bytes, train_regime
-from hydrofed.experiments.scoring import SCORES, alert_metrics, autoencoder_scores, summarise_seeds
+from hydrofed.experiments.regimes import REGIMES, SCORES, autoencoder_scores, parameter_bytes, train_regime
+from hydrofed.experiments.scoring import alert_metrics, summarise_seeds
 from hydrofed.models.lstm_autoencoder import build_model
 
 

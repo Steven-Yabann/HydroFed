@@ -1,4 +1,8 @@
-"""Turn trained models into calibrated SKAB scores and alert metrics."""
+"""Calibrate SKAB detector scores and turn them into alert metrics.
+
+This module does not import PyTorch, so classic models can use it in a
+separate process. Autoencoder scoring lives in ``hydrofed.experiments.regimes``.
+"""
 
 from __future__ import annotations
 
@@ -9,9 +13,11 @@ import numpy as np
 
 from hydrofed.evaluation import calibrated_recording_scores, evaluate_skab_scores
 from hydrofed.experiments.recordings import SkabRecording
-from hydrofed.training.local import reconstruction_signed_residuals
 
-SCORES = ("hybrid", "residual")
+# Candidate thresholds searched on development recordings: baseline MAD units
+# for calibrated scores, and probabilities for supervised classifiers.
+MAD_THRESHOLDS = (1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0, 32.0, 48.0, 64.0)
+PROBABILITY_THRESHOLDS = tuple(round(value, 2) for value in np.arange(0.05, 1.0, 0.05))
 REPORTED_METRICS = (
     "precision", "recall", "f1", "false_positive_rate", "macro_recording_auc_roc",
     "fault_events", "fault_events_detected", "median_detection_delay",
@@ -64,33 +70,9 @@ def calibrate_components(
     return RecordingScores(scores, np.concatenate(parts["labels"]), test_ids, np.concatenate(parts["roles"]))
 
 
-def autoencoder_scores(
-    recordings: dict[str, list[SkabRecording]],
-    models: dict,
-    score: str = "hybrid",
-    smoothing: float = 0.2,
-    calibration_tail: float = 0.25,
-    device: str = "cpu",
-) -> RecordingScores:
-    """Score every plant's recordings with that plant's autoencoder.
-
-    ``residual`` uses only the model's signed residuals. ``hybrid`` also
-    measures how far sensor levels sit from the baseline, which needs no model.
-    """
-    if score not in SCORES:
-        raise ValueError(f"score must be one of {SCORES}")
-
-    def components_for(model):
-        def components(recording, windows):
-            residuals = reconstruction_signed_residuals(model, windows, device=device)
-            return [windows.mean(axis=1), residuals] if score == "hybrid" else [residuals]
-        return components
-
-    per_plant = [
-        calibrate_components(items, components_for(models[plant]), smoothing, calibration_tail)
-        for plant, items in recordings.items()
-    ]
-    return RecordingScores(*(np.concatenate([getattr(item, name) for item in per_plant])
+def concatenate_scores(parts: list[RecordingScores]) -> RecordingScores:
+    """Join scores from several plants or folds."""
+    return RecordingScores(*(np.concatenate([getattr(part, name) for part in parts])
                              for name in ("scores", "labels", "recording_ids", "roles")))
 
 
