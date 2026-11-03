@@ -27,6 +27,7 @@ from hydrofed.experiments.regimes import (
     train_regime,
 )
 from hydrofed.experiments.scoring import (
+    REPORTED_METRICS,
     RecordingScores,
     alert_metrics,
     choose_threshold,
@@ -417,3 +418,9 @@ def test_fault_delays_use_each_recordings_logging_interval():
 
     assert result["fault_events_detected"] == 2
     assert result["median_detection_delay"] == (1 + 5) / 2
+
+
+def test_alert_metrics_are_empty_for_an_empty_selection():
+    empty = RecordingScores(np.array([]), np.array([], dtype=int), np.array([]), np.array([]))
+
+    assert alert_metrics(empty, threshold=1.0) == {name: None for name in REPORTED_METRICS}

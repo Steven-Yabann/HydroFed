@@ -84,7 +84,13 @@ def alert_metrics(
     consecutive_sequences: int = 1,
     sequence_seconds: dict[str, float] | None = None,
 ) -> dict[str, float | int | None]:
-    """Apply one threshold to calibrated scores and keep the reported metrics."""
+    """Apply one threshold to calibrated scores and keep the reported metrics.
+
+    An empty selection, such as a plant with no tested recordings in a role,
+    has no metrics.
+    """
+    if not len(scores.scores):
+        return dict.fromkeys(REPORTED_METRICS)
     result = evaluate_skab_scores(
         scores.scores, scores.labels, scores.recording_ids, threshold, consecutive_sequences,
         sequence_seconds,
