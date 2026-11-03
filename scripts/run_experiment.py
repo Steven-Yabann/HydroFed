@@ -9,12 +9,15 @@ from hydrofed.evaluation import (
     calibrate_recording_thresholds,
     evaluate_model,
     evaluate_skab_model,
+    evaluate_skab_scores,
+    hybrid_recording_scores,
 )
 from hydrofed.storage import ExperimentStore
 from hydrofed.training.local import (
     calibrate_threshold,
     reconstruction_absolute_errors,
     reconstruction_errors,
+    reconstruction_signed_residuals,
 )
 from flwr.common import ndarrays_to_parameters
 from hydrofed.data.pipeline import (
@@ -28,6 +31,7 @@ from hydrofed.monitoring import serve, F1
 from hydrofed.federation.checkpoint import save_global_checkpoint
 from hydrofed.data.splits import split_plant_windows, split_skab_plant_windows
 from hydrofed.data.scaling import (
+    WindowStandardScaler,
     fit_shared_standard_window_scaler,
     fit_shared_window_scaler,
     scale_plant_split,
@@ -75,6 +79,26 @@ p.add_argument(
     default="plant",
     help="Calibrate one SKAB threshold per plant or per recording",
 )
+p.add_argument(
+    "--skab-scaling",
+    choices=("shared", "plant"),
+    default="shared",
+    help="Pool scaler statistics across plants or fit them locally at each plant",
+)
+p.add_argument(
+    "--skab-score",
+    choices=("reconstruction", "hybrid"),
+    default="reconstruction",
+    help="Use the SKAB absolute reconstruction score or the per-recording hybrid",
+)
+p.add_argument("--skab-smoothing", type=float, default=0.2)
+p.add_argument("--skab-mad-multiplier", type=float, default=24.0)
+p.add_argument("--skab-calibration-tail", type=float, default=0.25)
+p.add_argument(
+    "--skab-exclude-anomaly-free",
+    action="store_true",
+    help="Train on the anomaly-free recording without testing on it, as SKAB does",
+)
 
 a=p.parse_args(); files=sorted(Path(a.partitions).glob("plant_*.npz"))
 
@@ -100,6 +124,8 @@ if not files:
     raise SystemExit("No plant partitions found; run make partition-synthetic")
 
 n_features=load_client_partition(files[0])[0].shape[2]\
+
+excluded_test_recordings = ("anomaly-free",) if a.skab_exclude_anomaly_free else ()
 
 
 def build_plant_split(file):
@@ -128,6 +154,7 @@ def build_plant_split(file):
         train_size=a.skab_train_size,
         window_labels=labels,
         training_policy=a.skab_training_policy,
+        exclude_test_recordings=excluded_test_recordings,
     )
 
 
@@ -135,17 +162,26 @@ raw_plant_splits = {}
 for file in files:
     raw_plant_splits[file] = build_plant_split(file)
 
-if a.evaluation_protocol == "skab":
+if a.evaluation_protocol == "skab" and a.skab_scaling == "plant":
+    # Local statistics never leave a plant, and each plant keeps its own units.
+    plant_scalers = {
+        file: WindowStandardScaler.fit(plant_split.train_windows)
+        for file, plant_split in raw_plant_splits.items()
+    }
+    scaling_name = "plant_skab_train_standard"
+elif a.evaluation_protocol == "skab":
     shared_scaler = fit_shared_standard_window_scaler(
         plant_split.train_windows
         for plant_split in raw_plant_splits.values()
     )
+    plant_scalers = dict.fromkeys(raw_plant_splits, shared_scaler)
     scaling_name = "shared_skab_train_standard"
 else:
     shared_scaler = fit_shared_window_scaler(
         plant_split.train_windows
         for plant_split in raw_plant_splits.values()
     )
+    plant_scalers = dict.fromkeys(raw_plant_splits, shared_scaler)
     scaling_name = "shared_normal_train_minmax"
 
 run_store = ExperimentStore(a.db)
@@ -171,6 +207,11 @@ run_id = run_store.create_run(
         "skab_persistence": a.skab_persistence,
         "skab_threshold_scope": a.skab_threshold_scope,
         "skab_training_policy": a.skab_training_policy,
+        "skab_score": a.skab_score,
+        "skab_smoothing": a.skab_smoothing,
+        "skab_mad_multiplier": a.skab_mad_multiplier,
+        "skab_calibration_tail": a.skab_calibration_tail,
+        "skab_exclude_anomaly_free": a.skab_exclude_anomaly_free,
     },
 )
 
@@ -188,10 +229,11 @@ try:
             learning_rate=a.learning_rate,
             device=device,
             seed=a.seed + int(cid),
-            scaler=shared_scaler,
+            scaler=plant_scalers[files[int(cid)]],
             evaluation_protocol=a.evaluation_protocol,
             skab_train_size=a.skab_train_size,
             skab_training_policy=a.skab_training_policy,
+            skab_exclude_test_recordings=excluded_test_recordings,
             model_config=model_config,
         ).to_client()
 
@@ -230,6 +272,18 @@ try:
             "scaler": scaling_name,
             **(
                 {
+                    "plant_scalers": {
+                        file.stem: {
+                            "means": scaler.means,
+                            "standard_deviations": scaler.standard_deviations,
+                        }
+                        for file, scaler in plant_scalers.items()
+                    },
+                    "skab_train_size": a.skab_train_size,
+                    "skab_training_policy": a.skab_training_policy,
+                }
+                if scaling_name == "plant_skab_train_standard"
+                else {
                     "means": shared_scaler.means,
                     "standard_deviations": shared_scaler.standard_deviations,
                     "skab_train_size": a.skab_train_size,
@@ -255,10 +309,37 @@ try:
         for file in files:
             plant_split = scale_plant_split(
                 raw_plant_splits[file],
-                shared_scaler,
+                plant_scalers[file],
             )
 
-            if a.evaluation_protocol == "skab":
+            if a.evaluation_protocol == "skab" and a.skab_score == "hybrid":
+                test_scores, threshold = hybrid_recording_scores(
+                    plant_split.train_windows.mean(axis=1),
+                    reconstruction_signed_residuals(
+                        global_model,
+                        plant_split.train_windows,
+                        device=device,
+                    ),
+                    plant_split.train_recording_ids,
+                    plant_split.test_windows.mean(axis=1),
+                    reconstruction_signed_residuals(
+                        global_model,
+                        plant_split.test_windows,
+                        device=device,
+                    ),
+                    plant_split.test_recording_ids,
+                    smoothing=a.skab_smoothing,
+                    mad_multiplier=a.skab_mad_multiplier,
+                    calibration_tail=a.skab_calibration_tail,
+                )
+                metrics = evaluate_skab_scores(
+                    test_scores,
+                    plant_split.test_labels,
+                    plant_split.test_recording_ids,
+                    threshold,
+                    consecutive_sequences=a.skab_persistence,
+                )
+            elif a.evaluation_protocol == "skab":
                 train_scores = reconstruction_absolute_errors(
                     global_model,
                     plant_split.train_windows,

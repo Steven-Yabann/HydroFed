@@ -98,3 +98,49 @@ Only labelled anomalous windows inside each recording's training region are
 excluded. The chronological boundary and held-out test data do not change.
 This is a label-assisted experiment: in a real plant, the equivalent input
 would be a trusted fault-free commissioning period rather than test labels.
+
+## Hybrid recording-baseline experiment
+
+The reconstruction score sums absolute error across sensors. SKAB faults
+usually move one sensor, so that sum dilutes them. The hybrid score keeps the
+sensors separate and measures each sequence against its own recording's
+fault-free start. It takes the larger of the sensor-level distance and the
+model-residual distance, then smooths the result:
+
+```bash
+.venv/bin/python scripts/run_experiment.py \
+  --partitions data/partitions_skab \
+  --rounds 20 \
+  --epochs 5 \
+  --batch-size 64 \
+  --learning-rate 0.001 \
+  --hidden-size 64 \
+  --latent-size 4 \
+  --num-layers 2 \
+  --dropout 0.1 \
+  --device mps \
+  --seed 42 \
+  --evaluate \
+  --evaluation-protocol skab \
+  --skab-training-policy normal-only \
+  --skab-scaling plant \
+  --skab-score hybrid \
+  --skab-exclude-anomaly-free \
+  --skab-persistence 1 \
+  --db artifacts/skab_runs/hybrid_latent4_seed42.db \
+  --output artifacts/skab_runs/hybrid_latent4_seed42.pt
+```
+
+Thresholds use no test labels: each is the median plus 24 MADs of the last 25%
+of that recording's baseline. `--latent-size 4`, the smoothing, and the
+threshold were chosen on half of the recordings, so metrics over all recordings
+include tuned data. Read `macro_recording_auc_roc` rather than `auc_roc`, which
+can look excellent when recordings merely differ in score level.
+
+`scripts/evaluate_skab_checkpoint.py` only supports shared-scaler checkpoints,
+so it rejects checkpoints from this experiment.
+
+The 400-observation baseline does not survive long runs. On the 2.6-hour
+anomaly-free recording, 94-97% of normal sequences raise an alert because the
+sensors drift. `--skab-exclude-anomaly-free` matches the SKAB leaderboard, but
+a real deployment would need a baseline that keeps adapting.
