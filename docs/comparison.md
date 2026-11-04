@@ -186,6 +186,62 @@ to show a federated benefit.
 - Scarce plants contribute two plants' final faults (8 recordings). Differences
   of a few hundredths are within run-to-run noise.
 
+## Personalised and robust federated training
+
+Plain FedAvg trails centralised and isolated training on the model's own
+(residual-only) score. Five alternatives were screened first in a separate
+scratch experiment, then the two that helped were added as regimes:
+
+```bash
+.venv/bin/python scripts/run_comparison.py scenarios --regimes fedprox federated_finetune --jobs 5
+```
+
+- **fedprox**: FedAvg with FedProx's proximal term, μ = 0.1, which keeps each
+  plant's update near the round's global model.
+- **federated_finetune**: FedAvg, then each plant fine-tunes the global model
+  on its own data for 5 epochs. Fine-tuning moves no extra bytes.
+
+Settings were fixed before running, not tuned. The repo regimes reproduce the
+screen's numbers exactly.
+
+### Model-only AUC, final recordings (mean over seeds 42–44)
+
+| Scenario | Plants | FedAvg | FedProx | FedAvg + fine-tune | Centralised | Isolated |
+|---|---|---|---|---|---|---|
+| baseline | all | 0.803 | 0.828 | **0.843** | 0.841 | 0.864 |
+| heterogeneous | all | 0.753 | 0.773 | **0.776** | 0.768 | 0.802 |
+| scarce, 100 s | plant_4, plant_5 | 0.877 | 0.870 | **0.885** | 0.877 | 0.902 |
+| scarce, 50 s | plant_4, plant_5 | 0.855 | 0.861 | **0.886** | 0.870 | 0.878 |
+| scarce, 25 s | plant_4, plant_5 | 0.845 | **0.858** | 0.836 | 0.857 | 0.888 |
+
+The full hybrid detector's AUC stays within 0.01 of FedAvg for both regimes in
+every scenario, so neither changes the headline detection rate.
+
+- **Fine-tuning closes the gap to centralised training.** It matches
+  centralised training on the unchanged data and beats it when plants differ,
+  while raw data stays at each plant. With only 25 seconds of data it
+  does slightly worse than FedAvg, likely because 5 epochs overfit 144
+  windows.
+- **FedProx is mixed.** It gives the 5-second plant under heterogeneity the
+  best score of any method (0.784, against 0.720 for the plant alone), but it
+  costs the scarce plants accuracy when they have full data (0.862 against
+  FedAvg's 0.904).
+- **Isolated plants still lead** in every scenario except 50 s scarcity,
+  where fine-tuning's 0.886 against 0.878 is within run-to-run noise.
+
+### Screened and not added
+
+| Strategy | baseline | heterogeneous | scarce, 25 s | Why not added |
+|---|---|---|---|---|
+| Coordinate-wise median | 0.817 | 0.754 | 0.812 | No consistent gain; discards honest plants' updates |
+| Trimmed mean (1 of 5 each side) | 0.794 | 0.758 | 0.844 | Worse than FedAvg on unchanged data |
+| Clustered FL (2 clusters after 3 rounds) | 0.826 | 0.772 | 0.855 | No better than FedProx; clusters changed between seeds when data was scarce |
+
+Server-side validation sets and reputation systems were not screened. They
+defend against unreliable or malicious clients, and a validation set would
+put plant data on the server, against HydroFed's privacy aim. The screening
+script and its results are kept in `artifacts/comparison/strategy-screen/`.
+
 ## LSTM against transformer and classic machine learning
 
 ```bash
