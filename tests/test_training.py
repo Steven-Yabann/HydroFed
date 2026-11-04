@@ -130,3 +130,60 @@ def test_skab_absolute_scores_return_one_finite_score_per_window():
     assert scores.shape == (5,)
     assert np.all(np.isfinite(scores))
     assert np.all(scores >= 0)
+
+
+def _proximal_run(mu, anchor=None):
+    torch.manual_seed(0)
+    model = LSTMAutoencoder(n_features=2, hidden_size=4, latent_size=2, num_layers=1)
+    start = [array.copy() for array in model.get_parameters_numpy()] if anchor is None else anchor
+    windows = np.random.default_rng(0).normal(size=(16, 6, 2)).astype(np.float32)
+    torch.manual_seed(1)
+    train_epochs(model, windows, epochs=3, batch_size=4, learning_rate=0.05,
+                 proximal_weights=start, proximal_mu=mu)
+    return start, model.get_parameters_numpy()
+
+
+def test_zero_proximal_mu_trains_exactly_like_plain_training():
+    _, plain = _proximal_run(0.0)
+    torch.manual_seed(0)
+    model = LSTMAutoencoder(n_features=2, hidden_size=4, latent_size=2, num_layers=1)
+    windows = np.random.default_rng(0).normal(size=(16, 6, 2)).astype(np.float32)
+    torch.manual_seed(1)
+    train_epochs(model, windows, epochs=3, batch_size=4, learning_rate=0.05)
+
+    for left, right in zip(plain, model.get_parameters_numpy()):
+        np.testing.assert_array_equal(left, right)
+
+
+def test_proximal_anchor_does_not_move_with_the_model():
+    torch.manual_seed(0)
+    model = LSTMAutoencoder(n_features=2, hidden_size=4, latent_size=2, num_layers=1)
+    start = [array.copy() for array in model.get_parameters_numpy()]
+    windows = np.random.default_rng(0).normal(size=(16, 6, 2)).astype(np.float32)
+
+    # The live arrays share memory with the weights, as Flower clients receive them.
+    train_epochs(model, windows, epochs=3, batch_size=4, learning_rate=0.05,
+                 proximal_weights=model.get_parameters_numpy(), proximal_mu=100.0)
+    moved = sum(float(((a - b) ** 2).sum()) for a, b in zip(start, model.get_parameters_numpy()))
+
+    _, free = _proximal_run(0.0)
+    free_moved = sum(float(((a - b) ** 2).sum()) for a, b in zip(start, free))
+    assert moved < free_moved
+
+
+def test_proximal_term_keeps_weights_near_the_global_model():
+    def distance(start, end):
+        return sum(float(((a - b) ** 2).sum()) for a, b in zip(start, end))
+
+    start, loose = _proximal_run(0.0)
+    _, tight = _proximal_run(10.0)
+
+    assert distance(start, tight) < distance(start, loose)
+
+
+def test_proximal_mu_must_not_be_negative():
+    model = LSTMAutoencoder(n_features=2, hidden_size=4, latent_size=2, num_layers=1)
+    windows = np.zeros((4, 6, 2), dtype=np.float32)
+
+    with pytest.raises(ValueError, match="proximal_mu"):
+        train_epochs(model, windows, proximal_weights=model.get_parameters_numpy(), proximal_mu=-1.0)

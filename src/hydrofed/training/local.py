@@ -50,8 +50,14 @@ def train_epochs(
     batch_size: int = 64,
     learning_rate: float = 1e-3,
     device: str = "cpu",
+    proximal_weights: list[np.ndarray] | None = None,
+    proximal_mu: float = 0.0,
 ) -> float:
     """Train an autoencoder on normal telemetry windows.
+
+    With ``proximal_weights`` and a positive ``proximal_mu``, the loss adds
+    FedProx's term mu/2 * ||w - w_global||^2, which keeps a client's update
+    close to the global model it started from.
 
     Returns:
         The average reconstruction loss from the final epoch.
@@ -64,6 +70,8 @@ def train_epochs(
         raise ValueError("batch_size must be positive")
     if learning_rate <= 0:
         raise ValueError("learning_rate must be positive")
+    if proximal_mu < 0:
+        raise ValueError("proximal_mu must be non-negative")
 
     dataset = PlantDataset(train_windows)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -73,6 +81,16 @@ def train_epochs(
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
+
+    anchors = []
+    if proximal_weights is not None and proximal_mu > 0:
+        # Copy the anchors: arrays from get_parameters_numpy share memory with
+        # the live weights, so an uncopied anchor would move with them.
+        weights = dict(zip(model.state_dict().keys(), proximal_weights))
+        anchors = [
+            (parameter, torch.tensor(weights[name], dtype=parameter.dtype, device=device))
+            for name, parameter in model.named_parameters()
+        ]
 
     final_epoch_loss = 0.0
 
@@ -88,8 +106,13 @@ def train_epochs(
             reconstruction = model(batch)
 
             loss = criterion(reconstruction, batch)
+            objective = loss
+            if anchors:
+                objective = loss + proximal_mu / 2 * sum(
+                    ((parameter - anchor) ** 2).sum() for parameter, anchor in anchors
+                )
 
-            loss.backward()
+            objective.backward()
 
             optimizer.step()
 
