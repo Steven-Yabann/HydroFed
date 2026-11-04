@@ -424,3 +424,37 @@ def test_alert_metrics_are_empty_for_an_empty_selection():
     empty = RecordingScores(np.array([]), np.array([], dtype=int), np.array([]), np.array([]))
 
     assert alert_metrics(empty, threshold=1.0) == {name: None for name in REPORTED_METRICS}
+
+
+def test_personalised_regimes_move_the_same_bytes_as_fedavg():
+    windows = {
+        name: np.random.default_rng(i).normal(size=(8, WINDOW, 2)).astype(np.float32)
+        for i, name in enumerate(("plant_1", "plant_2"))
+    }
+    factory = lambda: build_model(2, {"hidden_size": 4, "latent_size": 2, "num_layers": 1})
+
+    fedavg = train_regime("federated", windows, factory, rounds=2, epochs=1, batch_size=4)
+    fedprox = train_regime("fedprox", windows, factory, rounds=2, epochs=1, batch_size=4)
+    tuned = train_regime("federated_finetune", windows, factory, rounds=2, epochs=1, batch_size=4)
+
+    for result in (fedprox, tuned):
+        assert (result.uplink_bytes, result.downlink_bytes) == (fedavg.uplink_bytes, fedavg.downlink_bytes)
+    assert fedprox.models["plant_1"] is fedprox.models["plant_2"]
+
+
+def test_fine_tuning_gives_each_plant_its_own_model_from_the_global_one():
+    windows = {
+        name: np.random.default_rng(i).normal(size=(8, WINDOW, 2)).astype(np.float32)
+        for i, name in enumerate(("plant_1", "plant_2"))
+    }
+    factory = lambda: build_model(2, {"hidden_size": 4, "latent_size": 2, "num_layers": 1})
+
+    fedavg = train_regime("federated", windows, factory, rounds=2, epochs=1, batch_size=4)
+    tuned = train_regime("federated_finetune", windows, factory, rounds=2, epochs=1, batch_size=4)
+
+    global_weights = fedavg.models["plant_1"].get_parameters_numpy()
+    plant_1 = tuned.models["plant_1"].get_parameters_numpy()
+    plant_2 = tuned.models["plant_2"].get_parameters_numpy()
+    assert tuned.models["plant_1"] is not tuned.models["plant_2"]
+    assert any(not np.array_equal(a, b) for a, b in zip(plant_1, global_weights))
+    assert any(not np.array_equal(a, b) for a, b in zip(plant_1, plant_2))
