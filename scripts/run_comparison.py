@@ -13,6 +13,11 @@ models
     in each category is chosen on development recordings, and only the chosen
     models are reported on final recordings.
 
+scenarios
+    Rerun the regime comparison where federated learning should matter:
+    plants whose sensors differ, and plants with little training data. An
+    unchanged baseline runs alongside for reference. Alert settings stay frozen.
+
 publish
     Save existing comparison results to an experiments database so the
     dashboard can show them. ``regimes`` and ``models`` can also save directly
@@ -51,6 +56,7 @@ from hydrofed.experiments.publish import (
 )
 from hydrofed.experiments.recordings import ROLES, load_skab_recordings, plant_training_windows
 from hydrofed.experiments.regimes import REGIMES, SCORES, autoencoder_scores, parameter_bytes, train_regime
+from hydrofed.experiments.scenarios import HETEROGENEOUS_PROFILES, SCARCE_PLANTS, SCARCE_SECONDS
 from hydrofed.experiments.scoring import MAD_THRESHOLDS, alert_metrics, choose_threshold, summarise_seeds
 from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.models.transformer_autoencoder import build_transformer_model
@@ -94,8 +100,19 @@ def autoencoder_job(job: dict) -> dict:
     """
     args = job["args"]
     torch.set_num_threads(job["threads"])
-    recordings = load_skab_recordings(args.partitions, args.scaling)
+    scenario = job.get("scenario", {})
+    recordings = load_skab_recordings(
+        args.partitions, args.scaling,
+        profiles=HETEROGENEOUS_PROFILES if scenario.get("heterogeneous") else None,
+        training_seconds=scenario.get("training_seconds"),
+    )
     plant_windows = plant_training_windows(recordings)
+    sequence_seconds = {
+        recording.recording_id: recording.step_seconds for items in recordings.values() for recording in items
+    }
+    plant_of = {
+        recording.recording_id: plant for plant, items in recordings.items() for recording in items
+    }
     n_features = next(iter(plant_windows.values())).shape[2]
     build = ARCHITECTURES[job["architecture"]]
     result = train_regime(
@@ -103,7 +120,7 @@ def autoencoder_job(job: dict) -> dict:
         rounds=job["rounds"], epochs=args.epochs, batch_size=args.batch_size,
         learning_rate=args.learning_rate, seed=job["seed"], device=args.device,
     )
-    metrics, thresholds = {}, {}
+    metrics, thresholds, group_metrics = {}, {}, {}
     for score in SCORES:
         scores = autoencoder_scores(
             recordings, result.models, score, args.smoothing, args.calibration_tail, args.device,
@@ -115,9 +132,21 @@ def autoencoder_job(job: dict) -> dict:
                 args.max_false_positive_rate, args.persistence,
             )
         metrics[score] = {
-            role: alert_metrics(scores.select(role), thresholds[score], args.persistence)
+            role: alert_metrics(scores.select(role), thresholds[score], args.persistence, sequence_seconds)
             for role in ROLES
         }
+        if job.get("groups"):
+            plants = np.array([plant_of[recording_id] for recording_id in scores.recording_ids])
+            group_metrics[score] = {
+                group: {
+                    role: alert_metrics(
+                        scores.where(np.isin(plants, members) & (scores.roles == role)),
+                        thresholds[score], args.persistence, sequence_seconds,
+                    )
+                    for role in ROLES
+                }
+                for group, members in job["groups"].items()
+            }
     print(f"{job['label']} seed {job['seed']}: {result.seconds:.0f}s", flush=True)
     model = next(iter(result.models.values()))
     return {
@@ -126,6 +155,8 @@ def autoencoder_job(job: dict) -> dict:
         "model_bytes": parameter_bytes(model.get_parameters_numpy()),
         "uplink_bytes": result.uplink_bytes, "downlink_bytes": result.downlink_bytes,
         "seconds": result.seconds,
+        "group_metrics": group_metrics,
+        "training_windows": {plant: len(windows) for plant, windows in plant_windows.items()},
     }
 
 
@@ -377,6 +408,95 @@ def run_models(args) -> dict:
     }
 
 
+def scenario_specs(args) -> dict[str, dict]:
+    """Return each scenario's data changes, keyed by scenario name."""
+    specs = {}
+    for name in args.scenarios:
+        if name == "baseline":
+            specs[name] = {}
+        elif name == "heterogeneous":
+            specs[name] = {"heterogeneous": True}
+        else:
+            for seconds in args.scarce_seconds:
+                specs[f"scarce_{seconds}s"] = {
+                    "training_seconds": dict.fromkeys(args.scarce_plants, seconds),
+                }
+    return specs
+
+
+def print_scenario_tables(summary: dict, groups: dict[str, list[str]]) -> None:
+    def cells(metrics):
+        def value(name):
+            mean = metrics[name]["mean"]
+            return f"{mean:.3f}" if mean is not None else "n/a"
+        return f"{value('recall')} / {value('false_positive_rate')} / {value('macro_recording_auc_roc')}"
+
+    plant_groups = [group for group in groups if group.startswith("plant_")]
+    for scenario, regimes in summary.items():
+        for score in SCORES:
+            print(f"\n{scenario}, {score} score, final recordings: recall / false alarm rate / AUC")
+            print("| Regime | All plants | Scarce plants | Other plants |")
+            print("|---|---|---|---|")
+            for regime, scores in regimes.items():
+                group = scores["groups"][score]
+                print(f"| {regime} | {cells(scores[score]['final'])} | "
+                      f"{cells(group['scarce plants']['final'])} | {cells(group['other plants']['final'])} |")
+            print(f"\n{scenario}, {score} score, final recordings, within-recording AUC per plant")
+            print("| Regime | " + " | ".join(plant_groups) + " |")
+            print("|---" * (len(plant_groups) + 1) + "|")
+            for regime, scores in regimes.items():
+                values = [scores["groups"][score][plant]["final"]["macro_recording_auc_roc"]["mean"] for plant in plant_groups]
+                print(f"| {regime} | " + " | ".join(f"{v:.3f}" if v is not None else "n/a" for v in values) + " |")
+
+
+def run_scenarios(args) -> dict:
+    specs = scenario_specs(args)
+    plants = sorted(path.stem for path in Path(args.partitions).glob("plant_*.npz"))
+    groups = {
+        "scarce plants": list(args.scarce_plants),
+        "other plants": [plant for plant in plants if plant not in args.scarce_plants],
+        **{plant: [plant] for plant in plants},
+    }
+    jobs = [
+        {
+            "args": args, "label": f"{scenario}/{regime}", "regime": regime, "rounds": args.rounds,
+            "seed": seed, "architecture": "lstm", "config": lstm_config(args),
+            "threshold": args.mad_multiplier, "scenario": spec, "groups": groups,
+        }
+        for scenario, spec in specs.items()
+        for regime in args.regimes
+        for seed in args.seeds
+    ]
+    runs = run_jobs(jobs, args.jobs)
+
+    summary = {}
+    for scenario in specs:
+        summary[scenario] = {}
+        for regime in args.regimes:
+            selected = [run for run in runs if run["label"] == f"{scenario}/{regime}"]
+            summary[scenario][regime] = summarise(runs, f"{scenario}/{regime}") | {
+                "groups": {
+                    score: {
+                        group: {
+                            role: summarise_seeds([run["group_metrics"][score][group][role] for run in selected])
+                            for role in ROLES
+                        }
+                        for group in groups
+                    }
+                    for score in SCORES
+                },
+                "training_windows": selected[0]["training_windows"],
+            }
+    print_scenario_tables(summary, groups)
+    return {
+        "scenarios": specs,
+        "profiles": {plant: vars(profile) for plant, profile in HETEROGENEOUS_PROFILES.items()},
+        "groups": groups,
+        "summary": summary,
+        "runs": runs,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -400,6 +520,16 @@ def main() -> None:
     for command in (regimes, models):
         command.add_argument("--db", help="also save the summary to this experiments database")
 
+    scenarios = commands.add_parser("scenarios", help="heterogeneous and data-scarce plants")
+    add_common_arguments(scenarios)
+    scenarios.add_argument("--scenarios", nargs="+", choices=("baseline", "heterogeneous", "scarce"),
+                           default=["baseline", "heterogeneous", "scarce"])
+    scenarios.add_argument("--regimes", nargs="+", choices=REGIMES, default=list(REGIMES))
+    scenarios.add_argument("--scarce-plants", nargs="+", default=list(SCARCE_PLANTS))
+    scenarios.add_argument("--scarce-seconds", type=int, nargs="+", default=list(SCARCE_SECONDS))
+    scenarios.add_argument("--mad-multiplier", type=float, default=24.0)
+    scenarios.add_argument("--output", default="artifacts/comparison/scenarios.json")
+
     publisher = commands.add_parser("publish", help="save existing JSON results for the dashboard")
     publisher.add_argument("--regimes", help="result of the regimes command")
     publisher.add_argument("--models", help="result of the models command")
@@ -415,14 +545,15 @@ def main() -> None:
                 save_result(args.db, experiment, json.loads(Path(path).read_text()), rows_for)
         return
 
-    result = run_regimes(args) if args.command == "regimes" else run_models(args)
+    commands_run = {"regimes": run_regimes, "models": run_models, "scenarios": run_scenarios}
+    result = commands_run[args.command](args)
     result = {"config": vars(args)} | result
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2))
     print(f"\nSaved {output}")
-    if args.db:
+    if getattr(args, "db", None):
         if args.command == "regimes":
             save_result(args.db, REGIME_EXPERIMENT, result, regime_rows)
         else:

@@ -340,13 +340,15 @@ def fault_event_detection(
     labels: np.ndarray,
     predicted: np.ndarray,
     recording_ids: np.ndarray,
+    sequence_seconds: Mapping[str, float] | None = None,
 ) -> dict[str, float | int | None]:
     """Count detected faults and the delay to their first alert.
 
     SKAB recordings contain one fault each. A fault counts as detected when an
     alert fires between its first and last anomalous endpoint, and the delay
-    is measured in sequences from its first anomalous endpoint. Sequences are
-    one second apart in HydroFed's SKAB partitions.
+    is measured from its first anomalous endpoint. Sequences are one second
+    apart in HydroFed's SKAB partitions; ``sequence_seconds`` gives the
+    spacing for recordings logged more slowly.
     """
     labels, predicted = np.asarray(labels), np.asarray(predicted)
     recording_ids = np.asarray(recording_ids)
@@ -362,7 +364,8 @@ def fault_event_detection(
         alerts = np.flatnonzero(predicted[mask][anomalous[0]:anomalous[-1] + 1])
         if len(alerts):
             detected += 1
-            delays.append(int(alerts[0]))
+            spacing = (sequence_seconds or {}).get(str(recording_id), 1)
+            delays.append(float(alerts[0] * spacing))
 
     return {
         "fault_events": events,
@@ -377,6 +380,7 @@ def evaluate_skab_scores(
     recording_ids: np.ndarray,
     threshold: float | Mapping[str, float],
     consecutive_sequences: int = 10,
+    sequence_seconds: Mapping[str, float] | None = None,
 ) -> dict:
     """Apply the SKAB alert policy to previously computed scores."""
     predicted = persistent_predictions(
@@ -404,7 +408,7 @@ def evaluate_skab_scores(
             endpoint_labels,
             recording_ids,
         ),
-        **fault_event_detection(endpoint_labels, predicted, recording_ids),
+        **fault_event_detection(endpoint_labels, predicted, recording_ids, sequence_seconds),
         "mean_anomaly_score": float(scores.mean()),
         "consecutive_sequences": int(consecutive_sequences),
         **threshold_details,

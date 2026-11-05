@@ -8,6 +8,12 @@ from hydrofed.experiments.communication import (
     raw_skab_bytes,
     streaming_bytes_per_day,
 )
+from hydrofed.experiments.scenarios import (
+    PlantProfile,
+    apply_profile,
+    recording_series,
+    window_series,
+)
 from hydrofed.experiments.publish import REGIME_EXPERIMENT, model_rows, publish, regime_rows
 from hydrofed.experiments.recordings import (
     load_skab_recordings,
@@ -21,6 +27,7 @@ from hydrofed.experiments.regimes import (
     train_regime,
 )
 from hydrofed.experiments.scoring import (
+    REPORTED_METRICS,
     RecordingScores,
     alert_metrics,
     choose_threshold,
@@ -312,3 +319,108 @@ def test_published_comparisons_are_served_by_the_api(tmp_path):
 
     assert runs[0]["run_id"] == run_id and runs[0]["status"] == "completed"
     assert results[0]["metrics"]["recall"]["mean"] == 0.7
+
+
+def test_recording_series_round_trips_stride_one_windows():
+    rng = np.random.default_rng(5)
+    values = rng.normal(size=(20, 3)).astype(np.float32)
+    labels = np.zeros(20, dtype=np.int64)
+    labels[12:15] = 1
+    windows, endpoints, window_labels, starts = window_series(values, labels, WINDOW)
+
+    rebuilt_values, rebuilt_labels = recording_series(windows, endpoints, window_labels)
+
+    np.testing.assert_array_equal(rebuilt_values, values)
+    np.testing.assert_array_equal(rebuilt_labels, labels)
+    assert window_labels.tolist() == [int(labels[s:s + WINDOW].any()) for s in starts]
+
+
+def test_apply_profile_logs_slower_and_coarser_without_moving_labels():
+    values = np.arange(12, dtype=float).reshape(6, 2)
+    labels = np.array([0, 0, 1, 1, 0, 0])
+    mean, sd = np.zeros(2), np.ones(2)
+
+    slow, slow_labels = apply_profile(values, labels, PlantProfile(step_seconds=2), mean, sd, np.random.default_rng(0))
+    coarse, _ = apply_profile(values, labels, PlantProfile(resolution=4.0), mean, sd, np.random.default_rng(0))
+    shifted, _ = apply_profile(values, labels, PlantProfile(gain=2.0, offset=1.0), mean, sd, np.random.default_rng(0))
+
+    np.testing.assert_array_equal(slow, values[::2])
+    assert slow_labels.tolist() == [0, 1, 0]
+    assert set(np.unique(coarse)) <= {0.0, 4.0, 8.0, 12.0}
+    np.testing.assert_allclose(shifted, 2 * values + 1)
+
+
+def test_apply_profile_noise_is_repeatable_for_a_seed():
+    values, labels = np.zeros((50, 2)), np.zeros(50, dtype=np.int64)
+    profile = PlantProfile(noise=0.5)
+
+    first, _ = apply_profile(values, labels, profile, np.zeros(2), np.ones(2), np.random.default_rng(1))
+    second, _ = apply_profile(values, labels, profile, np.zeros(2), np.ones(2), np.random.default_rng(1))
+
+    np.testing.assert_array_equal(first, second)
+    assert 0.3 < first.std() < 0.7
+
+
+def test_default_profile_reproduces_partition_windows(partitions):
+    plain = load_skab_recordings(partitions, train_size=TRAIN_SIZE)
+    profiled = load_skab_recordings(
+        partitions, train_size=TRAIN_SIZE, profiles=dict.fromkeys(plain, PlantProfile()),
+    )
+
+    for plant in plain:
+        for before, after in zip(plain[plant], profiled[plant]):
+            np.testing.assert_array_equal(before.windows, after.windows)
+            np.testing.assert_array_equal(before.train_mask, after.train_mask)
+            np.testing.assert_array_equal(before.test_mask, after.test_mask)
+            np.testing.assert_array_equal(before.endpoint_labels, after.endpoint_labels)
+
+
+def test_plant_scaling_cancels_calibration_gain_and_offset(partitions):
+    plain = load_skab_recordings(partitions, train_size=TRAIN_SIZE)
+    recalibrated = load_skab_recordings(
+        partitions, train_size=TRAIN_SIZE, profiles={"plant_2": PlantProfile(gain=3.0, offset=5.0)},
+    )
+
+    for before, after in zip(plain["plant_2"], recalibrated["plant_2"]):
+        np.testing.assert_allclose(before.windows, after.windows, atol=1e-4)
+
+
+def test_slower_logging_keeps_baseline_and_test_boundaries_in_seconds(partitions):
+    recording = load_skab_recordings(
+        partitions, train_size=TRAIN_SIZE, profiles={"plant_1": PlantProfile(step_seconds=2)},
+    )["plant_1"][0]
+
+    starts = np.arange(len(recording.windows)) * 2
+    assert recording.step_seconds == 2
+    assert len(recording.windows) == LENGTH // 2 - WINDOW + 1
+    np.testing.assert_array_equal(recording.train_mask, starts + (WINDOW - 1) * 2 < TRAIN_SIZE)
+    np.testing.assert_array_equal(recording.test_mask, starts >= TRAIN_SIZE)
+
+
+def test_training_seconds_limit_model_data_but_not_the_alert_baseline(partitions):
+    full = load_skab_recordings(partitions, train_size=TRAIN_SIZE)
+    scarce = load_skab_recordings(partitions, train_size=TRAIN_SIZE, training_seconds={"plant_1": 6})
+
+    for before, after in zip(full["plant_1"], scarce["plant_1"]):
+        np.testing.assert_array_equal(before.train_mask, after.train_mask)
+        np.testing.assert_array_equal(before.test_mask, after.test_mask)
+        assert len(after.fit_windows) == 6 - WINDOW + 1
+    assert len(plant_training_windows(scarce)["plant_1"]) < len(plant_training_windows(full)["plant_1"])
+    assert len(plant_training_windows(scarce)["plant_2"]) == len(plant_training_windows(full)["plant_2"])
+
+
+def test_fault_delays_use_each_recordings_logging_interval():
+    labels = np.array([0, 1, 1, 1, 0, 1, 1])
+    predicted = np.array([0, 0, 1, 1, 0, 0, 1])
+    recordings = np.array(["fast"] * 4 + ["slow"] * 3)
+
+    result = fault_event_detection(labels, predicted, recordings, {"fast": 1, "slow": 5})
+
+    assert result["fault_events_detected"] == 2
+    assert result["median_detection_delay"] == (1 + 5) / 2
+
+
+def test_alert_metrics_are_empty_for_an_empty_selection():
+    empty = RecordingScores(np.array([]), np.array([], dtype=int), np.array([]), np.array([]))
+
+    assert alert_metrics(empty, threshold=1.0) == {name: None for name in REPORTED_METRICS}

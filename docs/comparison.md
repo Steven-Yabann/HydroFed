@@ -94,6 +94,98 @@ Fewer rounds cost little detection on development recordings (hybrid recall
 - Every plant has thousands of baseline windows. A data-scarcity experiment
   (shorter baselines) is needed before claiming federation helps small plants.
 
+## Heterogeneous and data-scarce plants
+
+```bash
+.venv/bin/python scripts/run_comparison.py scenarios --jobs 3
+```
+
+The five simulated plants are slices of one test rig, so the regime
+comparison above cannot show the two things federated learning is meant to
+help with: plants that differ, and plants with little data. This command
+reruns it under three conditions, with the frozen alert policy and no new
+tuning. Results go to `artifacts/comparison/scenarios.json` and the run takes
+about 45 minutes with `--jobs 3`.
+
+- **baseline**: the data unchanged, for reference.
+- **heterogeneous**: each plant records the same physical signals differently
+  (`hydrofed.experiments.scenarios.HETEROGENEOUS_PROFILES`):
+
+  | Plant | Profile |
+  |---|---|
+  | plant_1 | the test rig as recorded |
+  | plant_2 | extra sensor noise, 0.5 baseline sd |
+  | plant_3 | logs every 5 seconds |
+  | plant_4 | logs every 2 seconds, gain 1.2 and offset +1 sd, noise 0.25 sd |
+  | plant_5 | sensor resolution of 0.5 sd, gain 0.8 and offset −1 sd |
+
+  Each plant's own scaler cancels gains and offsets, which a test confirms,
+  so the profiles that matter are noise, resolution and logging interval.
+  Delays are converted to seconds for slower loggers.
+- **scarce**: plant_4 and plant_5 train their models on only the first 100,
+  50 or 25 seconds of each recording, instead of about 390. Every recording
+  keeps its full baseline as the alert reference and the test windows do not
+  change, so only the training data shrinks. At 25 seconds plant_4 has 144
+  training windows instead of 3,519.
+
+### Results, final recordings (mean over seeds 42–44)
+
+Within-recording AUC. "Model only" is the residual score; "No model" is the
+sensor-level distance from each recording's baseline, which needs no training.
+
+| Scenario | Plants | Federated, full | Centralised, full | Isolated, full | Federated, model only | Centralised, model only | Isolated, model only | No model |
+|---|---|---|---|---|---|---|---|---|
+| baseline | all | 0.845 | 0.845 | 0.846 | 0.803 | 0.841 | 0.864 | 0.844 |
+| baseline | plant_4, plant_5 | 0.885 | 0.885 | 0.895 | 0.904 | 0.916 | 0.931 | 0.882 |
+| scarce, 100 s | plant_4, plant_5 | 0.879 | 0.881 | 0.881 | 0.877 | 0.877 | 0.902 | 0.882 |
+| scarce, 50 s | plant_4, plant_5 | 0.881 | 0.879 | 0.881 | 0.855 | 0.870 | 0.878 | 0.882 |
+| scarce, 25 s | plant_4, plant_5 | 0.877 | 0.881 | 0.879 | 0.845 | 0.857 | 0.888 | 0.882 |
+| heterogeneous | all | 0.753 | 0.760 | 0.760 | 0.753 | 0.768 | 0.802 | 0.753 |
+
+Model-only AUC per plant under heterogeneity:
+
+| Regime | plant_1 | plant_2 (noisy) | plant_3 (5 s) | plant_4 (2 s) | plant_5 (coarse) |
+|---|---|---|---|---|---|
+| Federated | 0.964 | 0.550 | 0.637 | 0.870 | 0.903 |
+| Centralised | 0.978 | 0.592 | 0.594 | 0.915 | 0.918 |
+| Isolated | 0.999 | 0.611 | 0.720 | 0.904 | 0.923 |
+| No model | 0.994 | 0.535 | 0.786 | 0.831 | 0.799 |
+
+### What the scenarios show
+
+- **Federated learning does not beat plants training alone, even with 25
+  seconds of data.** On the scarce plants, isolated models keep the best
+  model-only AUC at every level.
+- **The trained model barely affects fault ranking.** The full detector's AUC
+  equals the no-model AUC in every scenario. An isolated autoencoder trained
+  on very little data reconstructs little, so its residual behaves like the
+  baseline distance (0.888 against 0.882 at 25 seconds), and that distance is
+  a strong detector on SKAB. A better-trained shared model reconstructs
+  faults too, which lowers its residual AUC. More training data, the thing
+  federated learning supplies, is therefore not what limits detection here.
+- **Different plants hurt shared models.** Under heterogeneity, both shared
+  models fit the 5-second plant worse than its own model does (federated
+  0.637, centralised 0.594, isolated 0.720), the expected penalty of one
+  model for unlike plants. Heavy noise (plant_2) defeats every detector.
+- **Federated stays close to centralised** in every scenario: within 0.01 on
+  the full detector, and within about 0.04 on the model-only score.
+
+For the dissertation, these results support "federated learning matches
+centralised training without moving raw data" but not "federated learning
+improves detection". On SKAB the per-recording baseline does most of the
+work, so a dataset or task where the model must learn shared structure, such
+as long-term drift or faults that do not shift sensor levels, would be needed
+to show a federated benefit.
+
+### Limits
+
+- Profiles are simulated transformations of one rig, not real plant
+  differences, and their strengths were chosen by hand, not tuned.
+- plant_1 has a single final fault recording, so its per-plant values rest on
+  one fault.
+- Scarce plants contribute two plants' final faults (8 recordings). Differences
+  of a few hundredths are within run-to-run noise.
+
 ## LSTM against transformer and classic machine learning
 
 ```bash
