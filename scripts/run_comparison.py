@@ -55,7 +55,7 @@ from hydrofed.experiments.publish import (
     regime_rows,
 )
 from hydrofed.experiments.recordings import ROLES, load_skab_recordings, plant_training_windows
-from hydrofed.experiments.regimes import REGIMES, SCORES, autoencoder_scores, parameter_bytes, train_regime
+from hydrofed.experiments.regimes import ALL_REGIMES, REGIMES, SCORES, autoencoder_scores, parameter_bytes, train_regime
 from hydrofed.experiments.scenarios import HETEROGENEOUS_PROFILES, SCARCE_PLANTS, SCARCE_SECONDS
 from hydrofed.experiments.scoring import MAD_THRESHOLDS, alert_metrics, choose_threshold, summarise_seeds
 from hydrofed.models.lstm_autoencoder import build_model
@@ -258,7 +258,7 @@ def run_regimes(args) -> dict:
         args, model_bytes, len(recordings), sorted({rounds for _, rounds in labels.values()}),
     )
     for run in runs:
-        if labels[run["label"]][0] == "federated":
+        if labels[run["label"]][0] in ("federated", "fedprox", "federated_finetune"):
             expected = federated_bytes(model_bytes, len(recordings), labels[run["label"]][1])
             if run["uplink_bytes"] + run["downlink_bytes"] != expected["total_bytes"]:
                 raise RuntimeError(f"Measured bytes for {run['label']} do not match the FedAvg formula")
@@ -503,7 +503,7 @@ def main() -> None:
 
     regimes = commands.add_parser("regimes", help="federated vs centralised vs isolated training")
     add_common_arguments(regimes)
-    regimes.add_argument("--regimes", nargs="+", choices=REGIMES, default=list(REGIMES))
+    regimes.add_argument("--regimes", nargs="+", choices=ALL_REGIMES, default=list(REGIMES))
     regimes.add_argument("--federated-rounds", type=int, nargs="*", default=[5, 10],
                          help="extra federated runs with fewer rounds, for the communication trade-off")
     regimes.add_argument("--mad-multiplier", type=float, default=24.0)
@@ -524,7 +524,7 @@ def main() -> None:
     add_common_arguments(scenarios)
     scenarios.add_argument("--scenarios", nargs="+", choices=("baseline", "heterogeneous", "scarce"),
                            default=["baseline", "heterogeneous", "scarce"])
-    scenarios.add_argument("--regimes", nargs="+", choices=REGIMES, default=list(REGIMES))
+    scenarios.add_argument("--regimes", nargs="+", choices=ALL_REGIMES, default=list(REGIMES))
     scenarios.add_argument("--scarce-plants", nargs="+", default=list(SCARCE_PLANTS))
     scenarios.add_argument("--scarce-seconds", type=int, nargs="+", default=list(SCARCE_SECONDS))
     scenarios.add_argument("--mad-multiplier", type=float, default=24.0)

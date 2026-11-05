@@ -22,6 +22,11 @@ from hydrofed.reproducibility import set_random_seed
 from hydrofed.training.local import reconstruction_signed_residuals, train_epochs
 
 REGIMES = ("federated", "centralised", "isolated")
+# Federated variants tested beyond plain FedAvg. Settings are fixed, not tuned.
+PERSONALISED_REGIMES = ("fedprox", "federated_finetune")
+ALL_REGIMES = REGIMES + PERSONALISED_REGIMES
+FEDPROX_MU = 0.1
+FINETUNE_EPOCHS = 5
 SCORES = ("hybrid", "residual")
 
 
@@ -66,8 +71,12 @@ def run_fedavg(
     learning_rate: float,
     seed: int,
     device: str = "cpu",
+    proximal_mu: float = 0.0,
 ):
     """Run FedAvg over the given clients and return the global model.
+
+    A positive ``proximal_mu`` turns this into FedProx: clients add a
+    proximal term that keeps their weights near the round's global model.
 
     Returns the model, the weighted loss per round, the bytes moved per round,
     and the total uplink and downlink bytes.
@@ -88,7 +97,10 @@ def run_fedavg(
             model = model_factory()
             model.set_parameters_numpy(state)
             downlink += parameter_bytes(state)
-            losses.append(train_epochs(model, windows, epochs, batch_size, learning_rate, device=device))
+            losses.append(train_epochs(
+                model, windows, epochs, batch_size, learning_rate, device=device,
+                proximal_weights=state, proximal_mu=proximal_mu,
+            ))
             results.append(model.get_parameters_numpy())
             uplink += parameter_bytes(results[-1])
             sizes.append(len(windows))
@@ -117,12 +129,15 @@ def train_regime(
     - federated: FedAvg across all plants, one shared global model
     - centralised: all plants' windows pooled at one server, one shared model
     - isolated: each plant trains alone on its own windows
+    - fedprox: FedAvg with a proximal term (mu = ``FEDPROX_MU``)
+    - federated_finetune: FedAvg, then each plant fine-tunes the global model
+      on its own windows for ``FINETUNE_EPOCHS`` epochs, which moves no bytes
 
     Only federated training moves model weights. Centralised training instead
     moves raw data, which ``hydrofed.experiments.communication`` accounts for.
     """
-    if regime not in REGIMES:
-        raise ValueError(f"regime must be one of {REGIMES}")
+    if regime not in ALL_REGIMES:
+        raise ValueError(f"regime must be one of {ALL_REGIMES}")
 
     start = time.perf_counter()
     options = dict(
@@ -130,10 +145,21 @@ def train_regime(
         learning_rate=learning_rate, seed=seed, device=device,
     )
 
-    if regime == "federated":
-        model, history, round_bytes, uplink, downlink = run_fedavg(plant_windows, **options)
+    if regime in ("federated", "fedprox", "federated_finetune"):
+        proximal_mu = FEDPROX_MU if regime == "fedprox" else 0.0
+        model, history, round_bytes, uplink, downlink = run_fedavg(
+            plant_windows, **options, proximal_mu=proximal_mu,
+        )
+        models = dict.fromkeys(plant_windows, model)
+        if regime == "federated_finetune":
+            global_weights = model.get_parameters_numpy()
+            for plant_index, (plant, windows) in enumerate(plant_windows.items()):
+                set_random_seed(seed + 1000 + plant_index)
+                models[plant] = model_factory()
+                models[plant].set_parameters_numpy(global_weights)
+                train_epochs(models[plant], windows, FINETUNE_EPOCHS, batch_size, learning_rate, device=device)
         return RegimeResult(
-            regime, dict.fromkeys(plant_windows, model), {"global": history},
+            regime, models, {"global": history},
             uplink, downlink, time.perf_counter() - start, round_bytes,
         )
 
