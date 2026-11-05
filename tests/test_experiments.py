@@ -307,12 +307,18 @@ def test_published_comparisons_are_served_by_the_api(tmp_path):
     from fastapi.testclient import TestClient
 
     from hydrofed.api import create_app
+    from hydrofed.auth import UserStore
     from hydrofed.storage import ExperimentStore
 
     database = tmp_path / "experiments.db"
     rows = [{"kind": "detection", "client_id": "federated", "metrics": {"role": "final", **_summary(0.7)}}]
     run_id = publish(ExperimentStore(database), REGIME_EXPERIMENT, {"rounds": 20}, rows)
+    UserStore(database).create("operator@example.com", "Operator", "operator", "correct horse battery")
     client = TestClient(create_app(database))
+    token = client.post(
+        "/api/auth/login", json={"email": "operator@example.com", "password": "correct horse battery"},
+    ).json()["token"]
+    client.headers["Authorization"] = f"Bearer {token}"
 
     runs = client.get("/api/runs", params={"experiment": REGIME_EXPERIMENT}).json()["runs"]
     results = client.get("/api/results", params={"run_id": run_id, "kind": "detection"}).json()["results"]

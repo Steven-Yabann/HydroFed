@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: setup test data partition partition-skab partition-synthetic baseline federated evaluate monitor-up monitor-down
+.PHONY: setup test data partition partition-skab partition-synthetic baseline federated evaluate monitor-up monitor-down operator-feed admin api dashboard
 
 setup:
 	python3.11 -m venv .venv
@@ -33,3 +33,11 @@ monitor-up:
 	docker compose -f monitoring/docker-compose.yml up -d
 monitor-down:
 	docker compose -f monitoring/docker-compose.yml down
+operator-feed:
+	$(PYTHON) scripts/build_operator_feed.py
+admin:
+	$(PYTHON) scripts/create_user.py --role admin --email $(EMAIL) --name "$(NAME)"
+api:
+	$(PYTHON) -m uvicorn hydrofed.api:create_app --factory --reload --port 8000
+dashboard:
+	cd frontend && npm run dev
