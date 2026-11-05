@@ -52,6 +52,32 @@ The default is two rounds and five clients. Use `scripts/run_experiment.py --rou
 
 [docs/comparison.md](docs/comparison.md) explains how to rerun the SKAB comparisons and gives their results: federated against centralised and isolated training, and the LSTM against transformer and classic models.
 
+## Dashboard
+
+The React dashboard (`frontend/`) is for two roles:
+
+- **Plant operators** watch the fleet's live anomaly scores, open a plant's score and sensor trends, and review alerts (acknowledge, investigate, resolve or mark a false alarm).
+- **System administrators** can do all of that, and also configure and start federated training, pause or rename plant nodes, and add users.
+
+Both roles can open **Model performance**, which compares federated, centralised and isolated training, the LSTM, transformer and classical model families, and communication overhead, using the results in `artifacts/comparison`.
+
+There is no live plant, so `make operator-feed` scores every SKAB recording (baseline and test region) with the saved federated LSTM checkpoint and the frozen alert policy. The API replays those scores second by second as if they were streaming in.
+
+```bash
+make operator-feed                                      # writes artifacts/operator/
+make admin EMAIL=you@example.com NAME="Your Name"       # first administrator; asks for a password
+make api                                                # FastAPI on :8000
+make dashboard                                          # Vite on :5173
+```
+
+`frontend/.env` sets `VITE_API_BASE_URL` to the API address.
+
+### Sign-in
+
+Only accounts an administrator has created can sign in, by password or single sign-on. Google and Microsoft sign-in use the OpenID Connect code flow with PKCE, and the provider's email must match an existing account. To enable a provider, register the redirect URI `<HYDROFED_PUBLIC_API_URL>/api/auth/oauth/google/callback` (or `.../microsoft/callback`) and set its client ID and secret on the API (see `.env.example`). Buttons for unconfigured providers appear greyed out in development and are hidden in production builds.
+
+Set `HYDROFED_SECRET_KEY` in any shared deployment. Without it, the API keeps a random signing key beside the database.
+
 ## Monitoring
 
 Start a process which imports `hydrofed.monitoring` and calls `serve(8000)`, then run `make monitor-up`. Prometheus is at port 9090 and Grafana at port 3000. Run `make monitor-down` afterward. The dashboard covers losses, anomaly score, communication bytes, and F1; no cloud deployment is included.

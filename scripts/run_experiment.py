@@ -42,6 +42,13 @@ from hydrofed.reproducibility import set_random_seed
 p = argparse.ArgumentParser()
 
 p.add_argument("--partitions", default="data/partitions")
+p.add_argument(
+    "--clients",
+    default="",
+    help="Comma-separated plants to train, such as plant_1,plant_3 (default: every partition)",
+)
+p.add_argument("--fraction-fit", type=float, default=1.0)
+p.add_argument("--metrics-port", type=int, default=8000)
 p.add_argument("--rounds", type=int, default=2)
 p.add_argument("--epochs", type=int, default=1)
 p.add_argument("--batch-size", type=int, default=64)
@@ -101,6 +108,15 @@ p.add_argument(
 )
 
 a=p.parse_args(); files=sorted(Path(a.partitions).glob("plant_*.npz"))
+
+if a.clients:
+    requested = [name.strip() for name in a.clients.split(",") if name.strip()]
+    unknown = sorted(set(requested) - {file.stem for file in files})
+    if unknown:
+        p.error(f"--clients names unknown plants: {', '.join(unknown)}")
+    files = [file for file in files if file.stem in requested]
+if not 0 < a.fraction_fit <= 1:
+    p.error("--fraction-fit must be in (0, 1]")
 
 if a.batch_size <= 0:
     p.error("--batch-size must be positive")
@@ -195,6 +211,8 @@ run_id = run_store.create_run(
         "learning_rate": a.learning_rate,
         "model": model_config,
         "client_count": len(files),
+        "clients": [file.stem for file in files],
+        "fraction_fit": a.fraction_fit,
         "device": str(device),
         "seed": a.seed,
         "evaluate": a.evaluate,
@@ -218,11 +236,13 @@ run_id = run_store.create_run(
 print(f"Started federated run: {run_id}")
 
 try:
-    serve(8000)
+    serve(a.metrics_port)
 
     def client_fn(cid):
+        # Record rounds under the plant's name, so a subset of plants
+        # (--clients) still maps back to the right partition.
         return HydroFedClient(
-            cid,
+            files[int(cid)].stem,
             files[int(cid)],
             epochs=a.epochs,
             batch_size=a.batch_size,
@@ -240,8 +260,9 @@ try:
     strategy = TrackingFedAvg(
         db_path=a.db,
         run_id=run_id,
-        fraction_fit=1.0,
+        fraction_fit=a.fraction_fit,
         fraction_evaluate=1.0,
+        min_fit_clients=max(1, round(a.fraction_fit * len(files))),
         min_available_clients=len(files),
         initial_parameters=ndarrays_to_parameters(
             build_model(n_features, model_config).get_parameters_numpy()

@@ -1,7 +1,20 @@
 from fastapi.testclient import TestClient
 
 from hydrofed.api import create_app
+from hydrofed.auth import UserStore
 from hydrofed.storage import ExperimentStore
+
+
+def signed_in_client(database):
+    """Return a test client signed in as a plant operator."""
+    UserStore(database).create("operator@example.com", "Operator", "operator", "correct horse battery")
+    client = TestClient(create_app(database))
+    token = client.post(
+        "/api/auth/login",
+        json={"email": "operator@example.com", "password": "correct horse battery"},
+    ).json()["token"]
+    client.headers["Authorization"] = f"Bearer {token}"
+    return client
 
 
 def test_health_endpoint_returns_ok(tmp_path):
@@ -30,7 +43,7 @@ def test_results_endpoint_filters_saved_experiment_data(tmp_path):
         client_id="plant_1",
     )
 
-    client = TestClient(create_app(database))
+    client = signed_in_client(database)
     response = client.get("/api/results?experiment=federated")
 
     assert response.status_code == 200
@@ -105,7 +118,7 @@ def test_runs_endpoint_and_run_filter_return_one_experiment(tmp_path):
     store.complete_run(first_run)
     store.complete_run(second_run)
 
-    client = TestClient(create_app(database))
+    client = signed_in_client(database)
 
     runs_response = client.get("/api/runs?experiment=federated")
     results_response = client.get(f"/api/results?run_id={first_run}")

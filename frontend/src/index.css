@@ -1,24 +1,138 @@
 :root {
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
-  color: #1e293b;
-  background: #f1f5f9;
+  /* Layered greens: brand and structure. */
+  --green-950: #04261a;
+  --green-900: #073523;
+  --green-800: #0c4a31;
+  --green-700: #0f5f3e;
+  --green-600: #16855a;
+  --green-500: #22a06b;
+  --green-400: #4cc38a;
+  --green-300: #8fdcb4;
+  --green-200: #c3eed6;
+  --green-100: #e2f6ea;
+  --green-50: #f2faf5;
+
+  /* Surfaces and ink. White first; green only as tint and accent. */
+  --page: #f6f9f7;
+  --surface: #ffffff;
+  --surface-sunken: #f2f6f3;
+  --ink: #0f1f17;
+  --ink-secondary: #4a5a52;
+  --ink-muted: #7b8a82;
+  --border: #e1e9e4;
+  --border-strong: #c9d6ce;
+  --focus: #16855a;
+
+  /* Status (reserved; always shown with an icon and a word). */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --critical-ink: #a32525;
+  --serious-ink: #a14417;
+  --warning-ink: #7a5300;
+  --critical-tint: #fdf0f0;
+  --critical-tint-strong: rgba(208, 59, 59, 0.14);
+  --serious-tint: #fdf2ec;
+  --warning-tint: #fff7e3;
+  --info-tint: #eef5fd;
+  --info-ink: #1c5cab;
+  --label-band: rgba(98, 80, 214, 0.12);
+
+  /* Chart series (validated: colour-blind safe adjacent pairs, light surface). */
+  --series-1: #16855a;
+  --series-1-mid: #4cc38a;
+  --series-1-light: #8fdcb4;
+  --series-2: #2a78d6;
+  --series-3: #eb6834;
+  --series-4: #6250d6;
+  --series-5: #e87ba4;
+  --series-other: #9aa59f;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 2px rgba(7, 53, 35, 0.06);
+  --shadow: 0 1px 2px rgba(7, 53, 35, 0.05), 0 4px 16px rgba(7, 53, 35, 0.06);
+  --shadow-lg: 0 12px 40px rgba(7, 53, 35, 0.18);
+
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--page);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  color-scheme: light;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  scroll-padding-top: 80px;
+}
+
 body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  background: var(--page);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--green-700);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  background: var(--surface-sunken);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -6,8 +6,20 @@ services:
     environment:
       HYDROFED_DB_PATH: /data/experiments.db
       HYDROFED_ALLOWED_ORIGINS: ${HYDROFED_ALLOWED_ORIGINS:-http://localhost:8080}
+      HYDROFED_SECRET_KEY: ${HYDROFED_SECRET_KEY:?set HYDROFED_SECRET_KEY}
+      HYDROFED_FRONTEND_URL: ${HYDROFED_FRONTEND_URL:-http://localhost:8080}
+      HYDROFED_PUBLIC_API_URL: ${HYDROFED_PUBLIC_API_URL:-http://localhost:8080}
+      HYDROFED_GOOGLE_CLIENT_ID: ${HYDROFED_GOOGLE_CLIENT_ID:-}
+      HYDROFED_GOOGLE_CLIENT_SECRET: ${HYDROFED_GOOGLE_CLIENT_SECRET:-}
+      HYDROFED_MICROSOFT_CLIENT_ID: ${HYDROFED_MICROSOFT_CLIENT_ID:-}
+      HYDROFED_MICROSOFT_CLIENT_SECRET: ${HYDROFED_MICROSOFT_CLIENT_SECRET:-}
+      HYDROFED_FEED_PATH: /artifacts/operator
+      HYDROFED_COMPARISON_PATH: /artifacts/comparison
+      HYDROFED_ALLOW_TRAINING: "0"
     volumes:
       - hydrofed-data:/data
+      - ./artifacts/operator:/artifacts/operator:ro
+      - ./artifacts/comparison:/artifacts/comparison:ro
     expose:
       - "8000"
     healthcheck:

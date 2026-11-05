@@ -1,16 +1,19 @@
-# React + Vite
+# HydroFed dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React 19 + Vite. No UI or chart libraries: charts are hand-built SVG in `src/components/charts.jsx`.
 
-Currently, two official plugins are available:
+```bash
+npm install
+npm run dev     # http://localhost:5173, talks to VITE_API_BASE_URL
+npm run lint
+npm run build
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- `src/lib/`: API client with the session token, auth context, hash router, formatting
+- `src/components/`: icons, shared UI pieces, charts
+- `src/pages/`: fleet overview, plant detail, alerts, model performance, sign-in
+- `src/pages/admin/`: federated training, plant nodes, users and access
 
-## React Compiler
+Navigation follows the signed-in user's permissions from `/api/auth/me`, so adding a role in `hydrofed.auth.ROLE_PERMISSIONS` needs no frontend change unless the role gets new pages.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Design notes: white surfaces with layered greens for structure. Colour signals abnormal state (watch, alarm, alert severity), and every status also carries an icon and a word. Chart series colours are checked for colour-blind separation.
