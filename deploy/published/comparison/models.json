@@ -1,0 +1,1865 @@
+{
+  "config": {
+    "command": "models",
+    "partitions": "data/partitions_skab",
+    "seeds": [
+      42,
+      43,
+      44
+    ],
+    "rounds": 20,
+    "epochs": 5,
+    "batch_size": 64,
+    "learning_rate": 0.001,
+    "hidden_size": 64,
+    "latent_size": 4,
+    "num_layers": 2,
+    "dropout": 0.1,
+    "scaling": "plant",
+    "smoothing": 0.2,
+    "calibration_tail": 0.25,
+    "persistence": 1,
+    "device": "cpu",
+    "jobs": 3,
+    "regime": "federated",
+    "max_false_positive_rate": 0.15,
+    "output": "artifacts/comparison/models.json",
+    "db": null
+  },
+  "selected": {
+    "recurrent": "lstm_autoencoder",
+    "transformer": "transformer_autoencoder_d32",
+    "classic": "xgboost",
+    "federated_classic": "federated_xgboost"
+  },
+  "candidates": {
+    "lstm_autoencoder": {
+      "category": "recurrent",
+      "training": "FedAvg",
+      "needs_fault_labels": false,
+      "parameters": 104204,
+      "model_bytes": 416816,
+      "federated_bytes_per_round": 4168160,
+      "communication_bytes": 83363200,
+      "rounds": 20,
+      "seconds": 158.82220515299923,
+      "summary": {
+        "hybrid": {
+          "dev": {
+            "precision": {
+              "mean": 0.890487993567017,
+              "sd": 0.013806602434002425
+            },
+            "recall": {
+              "mean": 0.8174015981059485,
+              "sd": 0.013248866546871142
+            },
+            "f1": {
+              "mean": 0.8523764007482707,
+              "sd": 0.013385041698931862
+            },
+            "false_positive_rate": {
+              "mean": 0.12295625942684767,
+              "sd": 0.01545319349994808
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.9195930281494601,
+              "sd": 0.00065175465433269
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 16.666666666666668,
+              "sd": 0.4714045207910317
+            },
+            "median_detection_delay": {
+              "mean": 49.666666666666664,
+              "sd": 4.714045207910317
+            }
+          },
+          "final": {
+            "precision": {
+              "mean": 0.7702467679561136,
+              "sd": 0.003937740039724111
+            },
+            "recall": {
+              "mean": 0.6821563402176327,
+              "sd": 0.008374655261940181
+            },
+            "f1": {
+              "mean": 0.7234856646585284,
+              "sd": 0.004047031103242648
+            },
+            "false_positive_rate": {
+              "mean": 0.23463901689708141,
+              "sd": 0.007196406095075715
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.8445662548161383,
+              "sd": 0.0015601452146513741
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 16.0,
+              "sd": 0.0
+            },
+            "median_detection_delay": {
+              "mean": 28.5,
+              "sd": 1.4719601443879744
+            }
+          }
+        },
+        "residual": {
+          "dev": {
+            "precision": {
+              "mean": 0.9097975932646781,
+              "sd": 0.015858302228345195
+            },
+            "recall": {
+              "mean": 0.7194929466311532,
+              "sd": 0.006976549662128516
+            },
+            "f1": {
+              "mean": 0.8034050576250366,
+              "sd": 0.004257068827547551
+            },
+            "false_positive_rate": {
+              "mean": 0.08766214177978883,
+              "sd": 0.017341805647714568
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.8729770770349267,
+              "sd": 0.013175573681359182
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 16.333333333333332,
+              "sd": 0.4714045207910317
+            },
+            "median_detection_delay": {
+              "mean": 50.666666666666664,
+              "sd": 5.436502143433364
+            }
+          },
+          "final": {
+            "precision": {
+              "mean": 0.8701294450044895,
+              "sd": 0.019556861967374214
+            },
+            "recall": {
+              "mean": 0.4872862536087053,
+              "sd": 0.015328749202607482
+            },
+            "f1": {
+              "mean": 0.6246512193581905,
+              "sd": 0.016659724339923056
+            },
+            "false_positive_rate": {
+              "mean": 0.08384536610343063,
+              "sd": 0.012938012888889985
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.8028912845006171,
+              "sd": 0.020017533120418336
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 13.666666666666666,
+              "sd": 0.9428090415820634
+            },
+            "median_detection_delay": {
+              "mean": 36.333333333333336,
+              "sd": 7.3181661333667165
+            }
+          }
+        }
+      },
+      "selection_score": "residual"
+    },
+    "transformer_autoencoder_d32": {
+      "category": "transformer",
+      "training": "FedAvg",
+      "needs_fault_labels": false,
+      "parameters": 35020,
+      "model_bytes": 140080,
+      "federated_bytes_per_round": 1400800,
+      "communication_bytes": 28016000,
+      "rounds": 20,
+      "seconds": 261.70651482000056,
+      "summary": {
+        "hybrid": {
+          "dev": {
+            "precision": {
+              "mean": 0.8874855355390259,
+              "sd": 0.0021454085453906234
+            },
+            "recall": {
+              "mean": 0.7976718950379796,
+              "sd": 0.020865851710120304
+            },
+            "f1": {
+              "mean": 0.840049622399364,
+              "sd": 0.01190051476628156
+            },
+            "false_positive_rate": {
+              "mean": 0.12368024132730016,
+              "sd": 0.0034668495682796154
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.9153494466852855,
+              "sd": 0.0011873761489835965
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 16.666666666666668,
+              "sd": 0.4714045207910317
+            },
+            "median_detection_delay": {
+              "mean": 51.833333333333336,
+              "sd": 0.23570226039551584
+            }
+          },
+          "final": {
+            "precision": {
+              "mean": 0.778089946090342,
+              "sd": 0.015565468093548853
+            },
+            "recall": {
+              "mean": 0.6377415056628913,
+              "sd": 0.012776745677312497
+            },
+            "f1": {
+              "mean": 0.7007011672821268,
+              "sd": 0.00373842478246449
+            },
+            "false_positive_rate": {
+              "mean": 0.2103814644137225,
+              "sd": 0.02236171594228213
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.8452392585625543,
+              "sd": 0.0008963346566424505
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 15.666666666666666,
+              "sd": 0.4714045207910317
+            },
+            "median_detection_delay": {
+              "mean": 40.0,
+              "sd": 8.286535263104035
+            }
+          }
+        },
+        "residual": {
+          "dev": {
+            "precision": {
+              "mean": 0.9012477933869744,
+              "sd": 0.018712392791193227
+            },
+            "recall": {
+              "mean": 0.7655618032948603,
+              "sd": 0.018854903150276464
+            },
+            "f1": {
+              "mean": 0.8274616434943894,
+              "sd": 0.003411961557475209
+            },
+            "false_positive_rate": {
+              "mean": 0.1035897435897436,
+              "sd": 0.02474472863917544
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.8686947891127437,
+              "sd": 0.009334946734808867
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 16.666666666666668,
+              "sd": 0.4714045207910317
+            },
+            "median_detection_delay": {
+              "mean": 27.833333333333332,
+              "sd": 3.8801489089409387
+            }
+          },
+          "final": {
+            "precision": {
+              "mean": 0.842344810947229,
+              "sd": 0.030709508569463244
+            },
+            "recall": {
+              "mean": 0.4380413057961359,
+              "sd": 0.027900263750962245
+            },
+            "f1": {
+              "mean": 0.5753130199708342,
+              "sd": 0.02141503053763923
+            },
+            "false_positive_rate": {
+              "mean": 0.09613415258576548,
+              "sd": 0.02706820934338681
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.7761802803025598,
+              "sd": 0.01977337984710213
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 11.333333333333334,
+              "sd": 0.4714045207910317
+            },
+            "median_detection_delay": {
+              "mean": 45.166666666666664,
+              "sd": 4.552166761249222
+            }
+          }
+        }
+      },
+      "selection_score": "residual"
+    },
+    "transformer_autoencoder_d64": {
+      "category": "transformer",
+      "training": "FedAvg",
+      "needs_fault_labels": false,
+      "parameters": 135564,
+      "model_bytes": 542256,
+      "federated_bytes_per_round": 5422560,
+      "communication_bytes": 108451200,
+      "rounds": 20,
+      "seconds": 337.8860722640008,
+      "summary": {
+        "hybrid": {
+          "dev": {
+            "precision": {
+              "mean": 0.8864498548149454,
+              "sd": 0.0058435005060669
+            },
+            "recall": {
+              "mean": 0.8167603827562395,
+              "sd": 0.002782342858078391
+            },
+            "f1": {
+              "mean": 0.8501663579270944,
+              "sd": 0.0028750475766974974
+            },
+            "false_positive_rate": {
+              "mean": 0.1280241327300151,
+              "sd": 0.007466048113091392
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.9138115863907271,
+              "sd": 0.0007097941534923104
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "median_detection_delay": {
+              "mean": 53.0,
+              "sd": 0.816496580927726
+            }
+          },
+          "final": {
+            "precision": {
+              "mean": 0.7806155734169882,
+              "sd": 0.020769730156014667
+            },
+            "recall": {
+              "mean": 0.6485121030424161,
+              "sd": 0.012041509995173689
+            },
+            "f1": {
+              "mean": 0.708125063482752,
+              "sd": 0.004676462483942445
+            },
+            "false_positive_rate": {
+              "mean": 0.21121351766513055,
+              "sd": 0.029654970339016182
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.844710315990164,
+              "sd": 0.00059509742849952
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 15.666666666666666,
+              "sd": 0.4714045207910317
+            },
+            "median_detection_delay": {
+              "mean": 39.666666666666664,
+              "sd": 19.601587237318874
+            }
+          }
+        },
+        "residual": {
+          "dev": {
+            "precision": {
+              "mean": 0.9264753638213552,
+              "sd": 0.014159135204926246
+            },
+            "recall": {
+              "mean": 0.7291111768767881,
+              "sd": 0.03117659873304508
+            },
+            "f1": {
+              "mean": 0.8154390532767191,
+              "sd": 0.015819964926904222
+            },
+            "false_positive_rate": {
+              "mean": 0.07143288084464555,
+              "sd": 0.01697266242556012
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.8626367825603086,
+              "sd": 0.0059954482251135385
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 16.333333333333332,
+              "sd": 0.4714045207910317
+            },
+            "median_detection_delay": {
+              "mean": 42.833333333333336,
+              "sd": 6.7371276438025784
+            }
+          },
+          "final": {
+            "precision": {
+              "mean": 0.8700596951804682,
+              "sd": 0.037007025524123834
+            },
+            "recall": {
+              "mean": 0.46591161447923607,
+              "sd": 0.04554524184940187
+            },
+            "f1": {
+              "mean": 0.6059864550132211,
+              "sd": 0.04387955055814572
+            },
+            "false_positive_rate": {
+              "mean": 0.07981310803891449,
+              "sd": 0.02157289373220462
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.7825132871694837,
+              "sd": 0.02378051307517465
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 11.666666666666666,
+              "sd": 0.9428090415820634
+            },
+            "median_detection_delay": {
+              "mean": 34.333333333333336,
+              "sd": 8.65383665716478
+            }
+          }
+        }
+      },
+      "selection_score": "residual"
+    },
+    "random_forest": {
+      "category": "classic",
+      "training": "centralised",
+      "needs_fault_labels": true,
+      "summary": {
+        "model": {
+          "dev": {
+            "precision": {
+              "mean": 0.8805958874258714,
+              "sd": 0.0022558457770866973
+            },
+            "recall": {
+              "mean": 0.8588339745486829,
+              "sd": 0.0022047446619933887
+            },
+            "f1": {
+              "mean": 0.8695782297983042,
+              "sd": 0.0021157191086181608
+            },
+            "false_positive_rate": {
+              "mean": 0.14244343891402714,
+              "sd": 0.0027686983784214274
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.9230356791502431,
+              "sd": 4.8744386581633146e-05
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "median_detection_delay": {
+              "mean": 13.0,
+              "sd": 0.0
+            }
+          },
+          "final": {
+            "precision": {
+              "mean": 0.8684753274787331,
+              "sd": 0.0030052113305438677
+            },
+            "recall": {
+              "mean": 0.6952031978680879,
+              "sd": 0.007820432724699608
+            },
+            "f1": {
+              "mean": 0.7722270558089147,
+              "sd": 0.005985721409105383
+            },
+            "false_positive_rate": {
+              "mean": 0.12135176651305685,
+              "sd": 0.0019072791123593638
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.8624340282595436,
+              "sd": 0.0026111092950284135
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 16.0,
+              "sd": 0.0
+            },
+            "median_detection_delay": {
+              "mean": 20.166666666666668,
+              "sd": 3.5197853469904796
+            }
+          },
+          "final_unseen_fault_type": {
+            "precision": {
+              "mean": 0.8873030324017597,
+              "sd": 0.002530987652045044
+            },
+            "recall": {
+              "mean": 0.6328003553186764,
+              "sd": 0.003981883428168137
+            },
+            "f1": {
+              "mean": 0.7387317444638412,
+              "sd": 0.0018543720473547553
+            },
+            "false_positive_rate": {
+              "mean": 0.09267793138760881,
+              "sd": 0.002913416967931654
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.8349942196794027,
+              "sd": 0.002335564999736989
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 16.0,
+              "sd": 0.0
+            },
+            "median_detection_delay": {
+              "mean": 29.5,
+              "sd": 0.0
+            }
+          }
+        }
+      },
+      "selection_score": "model"
+    },
+    "xgboost": {
+      "category": "classic",
+      "training": "centralised",
+      "needs_fault_labels": true,
+      "summary": {
+        "model": {
+          "dev": {
+            "precision": {
+              "mean": 0.8826059984369503,
+              "sd": 0.002218802638395994
+            },
+            "recall": {
+              "mean": 0.8598204597020814,
+              "sd": 0.004724841674983942
+            },
+            "f1": {
+              "mean": 0.8710502966730639,
+              "sd": 0.0013396787246534546
+            },
+            "false_positive_rate": {
+              "mean": 0.13990950226244345,
+              "sd": 0.003773513308262294
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.9240822779002248,
+              "sd": 0.002785855646208581
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "median_detection_delay": {
+              "mean": 10.0,
+              "sd": 0.0
+            }
+          },
+          "final": {
+            "precision": {
+              "mean": 0.8624883334923732,
+              "sd": 0.0074095045958926875
+            },
+            "recall": {
+              "mean": 0.7466133688652009,
+              "sd": 0.004201106909258844
+            },
+            "f1": {
+              "mean": 0.800338463042419,
+              "sd": 0.0008119806042664008
+            },
+            "false_positive_rate": {
+              "mean": 0.13735279057859703,
+              "sd": 0.009367803604678775
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.8619885797460544,
+              "sd": 0.0023296859007985427
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 16.666666666666668,
+              "sd": 0.4714045207910317
+            },
+            "median_detection_delay": {
+              "mean": 7.166666666666667,
+              "sd": 1.178511301977579
+            }
+          },
+          "final_unseen_fault_type": {
+            "precision": {
+              "mean": 0.8800786636950314,
+              "sd": 0.00304759487354412
+            },
+            "recall": {
+              "mean": 0.6244170552964691,
+              "sd": 0.004370829319512456
+            },
+            "f1": {
+              "mean": 0.7305060420430314,
+              "sd": 0.0019467116540292744
+            },
+            "false_positive_rate": {
+              "mean": 0.09811827956989246,
+              "sd": 0.0035335826271997574
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.8130696483866487,
+              "sd": 0.0015177874707330199
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 16.666666666666668,
+              "sd": 0.4714045207910317
+            },
+            "median_detection_delay": {
+              "mean": 24.166666666666668,
+              "sd": 1.178511301977579
+            }
+          }
+        }
+      },
+      "selection_score": "model"
+    },
+    "federated_xgboost": {
+      "category": "federated_classic",
+      "training": "FedXgbBagging",
+      "needs_fault_labels": true,
+      "summary": {
+        "model": {
+          "dev": {
+            "precision": {
+              "mean": 0.8735850534809027,
+              "sd": 0.00402231397680272
+            },
+            "recall": {
+              "mean": 0.8099043109401204,
+              "sd": 0.01427423905345545
+            },
+            "f1": {
+              "mean": 0.8405040087793451,
+              "sd": 0.009551692205042015
+            },
+            "false_positive_rate": {
+              "mean": 0.14328808446455507,
+              "sd": 0.0027343032744795554
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.9131515761894949,
+              "sd": 0.0027903531414825216
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "median_detection_delay": {
+              "mean": 10.333333333333334,
+              "sd": 1.247219128924647
+            }
+          },
+          "final": {
+            "precision": {
+              "mean": 0.8708496557018135,
+              "sd": 0.004698709893638166
+            },
+            "recall": {
+              "mean": 0.6878192316233621,
+              "sd": 0.011056695944678167
+            },
+            "f1": {
+              "mean": 0.7685533384870125,
+              "sd": 0.00816463914872003
+            },
+            "false_positive_rate": {
+              "mean": 0.11757552483358935,
+              "sd": 0.004059091140734233
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.8369323636282889,
+              "sd": 0.005032941549576618
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "median_detection_delay": {
+              "mean": 8.666666666666666,
+              "sd": 1.699673171197595
+            }
+          },
+          "final_unseen_fault_type": {
+            "precision": {
+              "mean": 0.8926495556235189,
+              "sd": 0.0033140644268046344
+            },
+            "recall": {
+              "mean": 0.6054297135243172,
+              "sd": 0.011759189178354484
+            },
+            "f1": {
+              "mean": 0.7214271921558842,
+              "sd": 0.00788114229812963
+            },
+            "false_positive_rate": {
+              "mean": 0.08397337429595493,
+              "sd": 0.003923612934970326
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.790682370134379,
+              "sd": 0.0060822034793804195
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "median_detection_delay": {
+              "mean": 37.0,
+              "sd": 5.0990195135927845
+            }
+          }
+        }
+      },
+      "selection_score": "model",
+      "clients": 4,
+      "rounds": 60,
+      "trees": 240,
+      "model_bytes": 476093.6666666667,
+      "communication_bytes": 56070267.0,
+      "uplink_bytes": 549471.0,
+      "downlink_bytes": 55520796.0
+    },
+    "isolation_forest": {
+      "category": "classic",
+      "training": "centralised",
+      "needs_fault_labels": false,
+      "summary": {
+        "model": {
+          "dev": {
+            "precision": {
+              "mean": 0.8398039420474337,
+              "sd": 0.02645686310085382
+            },
+            "recall": {
+              "mean": 0.3306204991614876,
+              "sd": 0.018810722507345046
+            },
+            "f1": {
+              "mean": 0.4743317231642772,
+              "sd": 0.022913961801787033
+            },
+            "false_positive_rate": {
+              "mean": 0.07692307692307693,
+              "sd": 0.012111829881861798
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.8626181449295628,
+              "sd": 0.010023329158518631
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 12.333333333333334,
+              "sd": 0.4714045207910317
+            },
+            "median_detection_delay": {
+              "mean": 62.0,
+              "sd": 10.614455552060438
+            }
+          },
+          "final": {
+            "precision": {
+              "mean": 0.7228818404980798,
+              "sd": 0.030285538770170317
+            },
+            "recall": {
+              "mean": 0.28958472129691315,
+              "sd": 0.06247831990428859
+            },
+            "f1": {
+              "mean": 0.4109908753733012,
+              "sd": 0.06679879384920792
+            },
+            "false_positive_rate": {
+              "mean": 0.125,
+              "sd": 0.010066768055426464
+            },
+            "macro_recording_auc_roc": {
+              "mean": 0.7530470524479514,
+              "sd": 0.011185900645587056
+            },
+            "fault_events": {
+              "mean": 17.0,
+              "sd": 0.0
+            },
+            "fault_events_detected": {
+              "mean": 10.0,
+              "sd": 0.816496580927726
+            },
+            "median_detection_delay": {
+              "mean": 33.5,
+              "sd": 11.276819882691514
+            }
+          }
+        }
+      },
+      "selection_score": "model"
+    }
+  },
+  "deep_runs": [
+    {
+      "label": "lstm_autoencoder",
+      "seed": 42,
+      "metrics": {
+        "hybrid": {
+          "dev": {
+            "precision": 0.8729183508488279,
+            "recall": 0.7989050014797278,
+            "f1": 0.834273352391254,
+            "false_positive_rate": 0.14226244343891403,
+            "macro_recording_auc_roc": 0.919513485414652,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 43.0
+          },
+          "final": {
+            "precision": 0.7744230769230769,
+            "recall": 0.6707195203197868,
+            "f1": 0.7188504105676544,
+            "false_positive_rate": 0.2252304147465438,
+            "macro_recording_auc_roc": 0.8465643539486273,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 30.0
+          }
+        },
+        "residual": {
+          "dev": {
+            "precision": 0.9315068493150684,
+            "recall": 0.7144125480911512,
+            "f1": 0.8086424922535801,
+            "false_positive_rate": 0.06425339366515836,
+            "macro_recording_auc_roc": 0.8908272534031916,
+            "fault_events": 17,
+            "fault_events_detected": 17,
+            "median_detection_delay": 54.0
+          },
+          "final": {
+            "precision": 0.8653374233128834,
+            "recall": 0.4698534310459693,
+            "f1": 0.6090241796200345,
+            "false_positive_rate": 0.08429339477726575,
+            "macro_recording_auc_roc": 0.8066129036377245,
+            "fault_events": 17,
+            "fault_events_detected": 15,
+            "median_detection_delay": 41.0
+          }
+        }
+      },
+      "thresholds": {
+        "hybrid": 24.0,
+        "residual": 12.0
+      },
+      "parameters": 104204,
+      "model_bytes": 416816,
+      "uplink_bytes": 41681600,
+      "downlink_bytes": 41681600,
+      "seconds": 158.60982387500007
+    },
+    {
+      "label": "lstm_autoencoder",
+      "seed": 43,
+      "metrics": {
+        "hybrid": {
+          "dev": {
+            "precision": 0.9066494094806665,
+            "recall": 0.8292394199467298,
+            "f1": 0.8662184094597728,
+            "false_positive_rate": 0.10443438914027149,
+            "macro_recording_auc_roc": 0.9204280547646753,
+            "fault_events": 17,
+            "fault_events_detected": 17,
+            "median_detection_delay": 53.0
+          },
+          "final": {
+            "precision": 0.7649683897359614,
+            "recall": 0.6852098600932711,
+            "f1": 0.7228958003865753,
+            "false_positive_rate": 0.24270353302611367,
+            "macro_recording_auc_roc": 0.8443776246035373,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 29.0
+          }
+        },
+        "residual": {
+          "dev": {
+            "precision": 0.8940685652095048,
+            "recall": 0.7293577981651376,
+            "f1": 0.8033575095754217,
+            "false_positive_rate": 0.10570135746606335,
+            "macro_recording_auc_roc": 0.8594235965310179,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 43.0
+          },
+          "final": {
+            "precision": 0.8961153619776339,
+            "recall": 0.5071618920719521,
+            "f1": 0.6477345245692406,
+            "false_positive_rate": 0.06778033794162826,
+            "macro_recording_auc_roc": 0.8253340674975527,
+            "fault_events": 17,
+            "fault_events_detected": 13,
+            "median_detection_delay": 26.0
+          }
+        }
+      },
+      "thresholds": {
+        "hybrid": 24.0,
+        "residual": 12.0
+      },
+      "parameters": 104204,
+      "model_bytes": 416816,
+      "uplink_bytes": 41681600,
+      "downlink_bytes": 41681600,
+      "seconds": 159.17313133399875
+    },
+    {
+      "label": "lstm_autoencoder",
+      "seed": 44,
+      "metrics": {
+        "hybrid": {
+          "dev": {
+            "precision": 0.8918962203715567,
+            "recall": 0.824060372891388,
+            "f1": 0.8566374403937855,
+            "false_positive_rate": 0.12217194570135746,
+            "macro_recording_auc_roc": 0.9188375442690533,
+            "fault_events": 17,
+            "fault_events_detected": 17,
+            "median_detection_delay": 53.0
+          },
+          "final": {
+            "precision": 0.7713488372093024,
+            "recall": 0.6905396402398402,
+            "f1": 0.7287107830213552,
+            "false_positive_rate": 0.2359831029185868,
+            "macro_recording_auc_roc": 0.8427567858962506,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 26.5
+          }
+        },
+        "residual": {
+          "dev": {
+            "precision": 0.9038173652694611,
+            "recall": 0.7147084936371707,
+            "f1": 0.7982151710461081,
+            "false_positive_rate": 0.0930316742081448,
+            "macro_recording_auc_roc": 0.8686803811705706,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 55.0
+          },
+          "final": {
+            "precision": 0.8489355497229513,
+            "recall": 0.48484343770819455,
+            "f1": 0.6171949538852963,
+            "false_positive_rate": 0.09946236559139784,
+            "macro_recording_auc_roc": 0.7767268823665742,
+            "fault_events": 17,
+            "fault_events_detected": 13,
+            "median_detection_delay": 42.0
+          }
+        }
+      },
+      "thresholds": {
+        "hybrid": 24.0,
+        "residual": 12.0
+      },
+      "parameters": 104204,
+      "model_bytes": 416816,
+      "uplink_bytes": 41681600,
+      "downlink_bytes": 41681600,
+      "seconds": 158.68366024999887
+    },
+    {
+      "label": "transformer_autoencoder_d32",
+      "seed": 42,
+      "metrics": {
+        "hybrid": {
+          "dev": {
+            "precision": 0.8903044341495698,
+            "recall": 0.7962414915655519,
+            "f1": 0.8406498984533667,
+            "false_positive_rate": 0.12,
+            "macro_recording_auc_roc": 0.9169410255284113,
+            "fault_events": 17,
+            "fault_events_detected": 17,
+            "median_detection_delay": 52.0
+          },
+          "final": {
+            "precision": 0.7996586302538937,
+            "recall": 0.6242504996668887,
+            "f1": 0.7011505004209148,
+            "false_positive_rate": 0.18029953917050692,
+            "macro_recording_auc_roc": 0.8447323671822081,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 49.0
+          }
+        },
+        "residual": {
+          "dev": {
+            "precision": 0.9161372299872935,
+            "recall": 0.74681858538029,
+            "f1": 0.8228580745088449,
+            "false_positive_rate": 0.08361990950226245,
+            "macro_recording_auc_roc": 0.8818923973600874,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 32.5
+          },
+          "final": {
+            "precision": 0.8698453608247423,
+            "recall": 0.4497001998667555,
+            "f1": 0.5928853754940712,
+            "false_positive_rate": 0.07757296466973887,
+            "macro_recording_auc_roc": 0.8041010854534943,
+            "fault_events": 17,
+            "fault_events_detected": 11,
+            "median_detection_delay": 41.0
+          }
+        }
+      },
+      "thresholds": {
+        "hybrid": 24.0,
+        "residual": 12.0
+      },
+      "parameters": 35020,
+      "model_bytes": 140080,
+      "uplink_bytes": 14008000,
+      "downlink_bytes": 14008000,
+      "seconds": 262.4330209590007
+    },
+    {
+      "label": "transformer_autoencoder_d32",
+      "seed": 43,
+      "metrics": {
+        "hybrid": {
+          "dev": {
+            "precision": 0.8851042196237926,
+            "recall": 0.7728617934300088,
+            "f1": 0.8251836637965084,
+            "false_positive_rate": 0.12271493212669683,
+            "macro_recording_auc_roc": 0.9140900294298424,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 51.5
+          },
+          "final": {
+            "precision": 0.7634951456310679,
+            "recall": 0.6548967355096602,
+            "f1": 0.7050385511923973,
+            "false_positive_rate": 0.23387096774193547,
+            "macro_recording_auc_roc": 0.8464988948765386,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 29.0
+          }
+        },
+        "residual": {
+          "dev": {
+            "precision": 0.8748568624243416,
+            "recall": 0.7913583900562297,
+            "f1": 0.8310154611141325,
+            "false_positive_rate": 0.13846153846153847,
+            "macro_recording_auc_roc": 0.8618145631974273,
+            "fault_events": 17,
+            "fault_events_detected": 17,
+            "median_detection_delay": 23.0
+          },
+          "final": {
+            "precision": 0.7994843884273847,
+            "recall": 0.464856762158561,
+            "f1": 0.5878883622959452,
+            "false_positive_rate": 0.13440860215053763,
+            "macro_recording_auc_roc": 0.7608777504382946,
+            "fault_events": 17,
+            "fault_events_detected": 11,
+            "median_detection_delay": 43.0
+          }
+        }
+      },
+      "thresholds": {
+        "hybrid": 24.0,
+        "residual": 8.0
+      },
+      "parameters": 35020,
+      "model_bytes": 140080,
+      "uplink_bytes": 14008000,
+      "downlink_bytes": 14008000,
+      "seconds": 260.9995448340014
+    },
+    {
+      "label": "transformer_autoencoder_d32",
+      "seed": 44,
+      "metrics": {
+        "hybrid": {
+          "dev": {
+            "precision": 0.8870479528437152,
+            "recall": 0.8239124001183782,
+            "f1": 0.8543153049482164,
+            "false_positive_rate": 0.12832579185520362,
+            "macro_recording_auc_roc": 0.9150172850976027,
+            "fault_events": 17,
+            "fault_events_detected": 17,
+            "median_detection_delay": 52.0
+          },
+          "final": {
+            "precision": 0.7711160623860644,
+            "recall": 0.6340772818121253,
+            "f1": 0.6959144502330683,
+            "false_positive_rate": 0.21697388632872505,
+            "macro_recording_auc_roc": 0.8444865136289162,
+            "fault_events": 17,
+            "fault_events_detected": 15,
+            "median_detection_delay": 42.0
+          }
+        },
+        "residual": {
+          "dev": {
+            "precision": 0.9127492877492878,
+            "recall": 0.7585084344480616,
+            "f1": 0.8285113948601908,
+            "false_positive_rate": 0.08868778280542987,
+            "macro_recording_auc_roc": 0.8623774067807164,
+            "fault_events": 17,
+            "fault_events_detected": 17,
+            "median_detection_delay": 28.0
+          },
+          "final": {
+            "precision": 0.8577046835895602,
+            "recall": 0.3995669553630913,
+            "f1": 0.545165322122486,
+            "false_positive_rate": 0.07642089093701997,
+            "macro_recording_auc_roc": 0.7635620050158903,
+            "fault_events": 17,
+            "fault_events_detected": 12,
+            "median_detection_delay": 51.5
+          }
+        }
+      },
+      "thresholds": {
+        "hybrid": 24.0,
+        "residual": 12.0
+      },
+      "parameters": 35020,
+      "model_bytes": 140080,
+      "uplink_bytes": 14008000,
+      "downlink_bytes": 14008000,
+      "seconds": 261.6869786669995
+    },
+    {
+      "label": "transformer_autoencoder_d64",
+      "seed": 42,
+      "metrics": {
+        "hybrid": {
+          "dev": {
+            "precision": 0.8946941424630862,
+            "recall": 0.8159218703758508,
+            "f1": 0.8534943115857906,
+            "false_positive_rate": 0.11746606334841629,
+            "macro_recording_auc_roc": 0.9128100216715666,
+            "fault_events": 17,
+            "fault_events_detected": 17,
+            "median_detection_delay": 53.0
+          },
+          "final": {
+            "precision": 0.7901388025688834,
+            "recall": 0.6352431712191872,
+            "f1": 0.7042747668728649,
+            "false_positive_rate": 0.19450844854070662,
+            "macro_recording_auc_roc": 0.8440092575073422,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 52.0
+          }
+        },
+        "residual": {
+          "dev": {
+            "precision": 0.9216937354988399,
+            "recall": 0.7053862089375554,
+            "f1": 0.7991617770326906,
+            "false_positive_rate": 0.07330316742081448,
+            "macro_recording_auc_roc": 0.8628633747555344,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 43.0
+          },
+          "final": {
+            "precision": 0.8180354267310789,
+            "recall": 0.4230512991339107,
+            "f1": 0.5576901965089472,
+            "false_positive_rate": 0.10848694316436253,
+            "macro_recording_auc_roc": 0.7583824400037145,
+            "fault_events": 17,
+            "fault_events_detected": 11,
+            "median_detection_delay": 36.0
+          }
+        }
+      },
+      "thresholds": {
+        "hybrid": 24.0,
+        "residual": 12.0
+      },
+      "parameters": 135564,
+      "model_bytes": 542256,
+      "uplink_bytes": 54225600,
+      "downlink_bytes": 54225600,
+      "seconds": 337.7159223340004
+    },
+    {
+      "label": "transformer_autoencoder_d64",
+      "seed": 43,
+      "metrics": {
+        "hybrid": {
+          "dev": {
+            "precision": 0.8828212068142015,
+            "recall": 0.8205090263391536,
+            "f1": 0.8505253470358156,
+            "false_positive_rate": 0.13321266968325793,
+            "macro_recording_auc_roc": 0.914254379997111,
+            "fault_events": 17,
+            "fault_events_detected": 17,
+            "median_detection_delay": 54.0
+          },
+          "final": {
+            "precision": 0.7999174917491749,
+            "recall": 0.6459027315123251,
+            "f1": 0.7147069664577957,
+            "false_positive_rate": 0.18625192012288785,
+            "macro_recording_auc_roc": 0.8454640811139785,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 55.0
+          }
+        },
+        "residual": {
+          "dev": {
+            "precision": 0.945705824284304,
+            "recall": 0.7087895827167802,
+            "f1": 0.8102850376385012,
+            "false_positive_rate": 0.049773755656108594,
+            "macro_recording_auc_roc": 0.8551832145935603,
+            "fault_events": 17,
+            "fault_events_detected": 17,
+            "median_detection_delay": 51.0
+          },
+          "final": {
+            "precision": 0.901010101010101,
+            "recall": 0.4457028647568288,
+            "f1": 0.596389569868509,
+            "false_positive_rate": 0.056451612903225805,
+            "macro_recording_auc_roc": 0.7742921175323487,
+            "fault_events": 17,
+            "fault_events_detected": 11,
+            "median_detection_delay": 44.0
+          }
+        }
+      },
+      "thresholds": {
+        "hybrid": 24.0,
+        "residual": 12.0
+      },
+      "parameters": 135564,
+      "model_bytes": 542256,
+      "uplink_bytes": 54225600,
+      "downlink_bytes": 54225600,
+      "seconds": 337.40596925000136
+    },
+    {
+      "label": "transformer_autoencoder_d64",
+      "seed": 44,
+      "metrics": {
+        "hybrid": {
+          "dev": {
+            "precision": 0.8818342151675485,
+            "recall": 0.8138502515537142,
+            "f1": 0.8464794151596768,
+            "false_positive_rate": 0.13339366515837103,
+            "macro_recording_auc_roc": 0.914370357503504,
+            "fault_events": 17,
+            "fault_events_detected": 17,
+            "median_detection_delay": 52.0
+          },
+          "final": {
+            "precision": 0.7517904259329061,
+            "recall": 0.6643904063957362,
+            "f1": 0.705393457117595,
+            "false_positive_rate": 0.2528801843317972,
+            "macro_recording_auc_roc": 0.8446576093491712,
+            "fault_events": 17,
+            "fault_events_detected": 15,
+            "median_detection_delay": 12.0
+          }
+        },
+        "residual": {
+          "dev": {
+            "precision": 0.9120265316809216,
+            "recall": 0.7731577389760285,
+            "f1": 0.8368703451589653,
+            "false_positive_rate": 0.09122171945701357,
+            "macro_recording_auc_roc": 0.8698637583318314,
+            "fault_events": 17,
+            "fault_events_detected": 16,
+            "median_detection_delay": 34.5
+          },
+          "final": {
+            "precision": 0.8911335578002245,
+            "recall": 0.5289806795469687,
+            "f1": 0.6638795986622074,
+            "false_positive_rate": 0.07450076804915515,
+            "macro_recording_auc_roc": 0.8148653039723879,
+            "fault_events": 17,
+            "fault_events_detected": 13,
+            "median_detection_delay": 23.0
+          }
+        }
+      },
+      "thresholds": {
+        "hybrid": 24.0,
+        "residual": 12.0
+      },
+      "parameters": 135564,
+      "model_bytes": 542256,
+      "uplink_bytes": 54225600,
+      "downlink_bytes": 54225600,
+      "seconds": 338.53632520800056
+    }
+  ],
+  "classic_runs": {
+    "random_forest": [
+      {
+        "threshold": 0.4,
+        "dev": {
+          "precision": 0.883621999392282,
+          "recall": 0.8606096478248002,
+          "f1": 0.8719640179910045,
+          "false_positive_rate": 0.13864253393665157,
+          "macro_recording_auc_roc": 0.9230307443566855,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 13.0
+        },
+        "final": {
+          "precision": 0.865461425268026,
+          "recall": 0.685709526982012,
+          "f1": 0.7651705231855775,
+          "false_positive_rate": 0.1228878648233487,
+          "macro_recording_auc_roc": 0.8637375419273834,
+          "fault_events": 17,
+          "fault_events_detected": 16,
+          "median_detection_delay": 24.0
+        },
+        "final_unseen_fault_type": {
+          "precision": 0.8907801418439716,
+          "recall": 0.6275816122584943,
+          "f1": 0.7363689661911276,
+          "false_positive_rate": 0.08870967741935484,
+          "macro_recording_auc_roc": 0.8324774600314392,
+          "fault_events": 17,
+          "fault_events_detected": 16,
+          "median_detection_delay": 29.5
+        },
+        "seed": 42
+      },
+      {
+        "threshold": 0.4,
+        "dev": {
+          "precision": 0.8799576142900394,
+          "recall": 0.860165729505771,
+          "f1": 0.8699491170308291,
+          "false_positive_rate": 0.14352941176470588,
+          "macro_recording_auc_roc": 0.9230976928205764,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 13.0
+        },
+        "final": {
+          "precision": 0.8673872375805446,
+          "recall": 0.6950366422385077,
+          "f1": 0.7717059639389736,
+          "false_positive_rate": 0.12250384024577574,
+          "macro_recording_auc_roc": 0.8647743403944467,
+          "fault_events": 17,
+          "fault_events_detected": 16,
+          "median_detection_delay": 15.5
+        },
+        "final_unseen_fault_type": {
+          "precision": 0.8863000931966449,
+          "recall": 0.6335776149233844,
+          "f1": 0.7389277389277389,
+          "false_positive_rate": 0.09370199692780339,
+          "macro_recording_auc_roc": 0.8381050941613475,
+          "fault_events": 17,
+          "fault_events_detected": 16,
+          "median_detection_delay": 29.5
+        },
+        "seed": 43
+      },
+      {
+        "threshold": 0.4,
+        "dev": {
+          "precision": 0.8782080485952923,
+          "recall": 0.855726546315478,
+          "f1": 0.8668215543730795,
+          "false_positive_rate": 0.145158371040724,
+          "macro_recording_auc_roc": 0.9229786002734672,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 13.0
+        },
+        "final": {
+          "precision": 0.8725773195876289,
+          "recall": 0.7048634243837442,
+          "f1": 0.7798046803021927,
+          "false_positive_rate": 0.11866359447004608,
+          "macro_recording_auc_roc": 0.8587902024568012,
+          "fault_events": 17,
+          "fault_events_detected": 16,
+          "median_detection_delay": 21.0
+        },
+        "final_unseen_fault_type": {
+          "precision": 0.8848288621646624,
+          "recall": 0.6372418387741505,
+          "f1": 0.7408985282726569,
+          "false_positive_rate": 0.0956221198156682,
+          "macro_recording_auc_roc": 0.8344001048454214,
+          "fault_events": 17,
+          "fault_events_detected": 16,
+          "median_detection_delay": 29.5
+        },
+        "seed": 44
+      }
+    ],
+    "xgboost": [
+      {
+        "threshold": 0.25,
+        "dev": {
+          "precision": 0.8832038982792751,
+          "recall": 0.858242083456644,
+          "f1": 0.8705440900562852,
+          "false_positive_rate": 0.1388235294117647,
+          "macro_recording_auc_roc": 0.9259132678421133,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 10.0
+        },
+        "final": {
+          "precision": 0.8711380524051623,
+          "recall": 0.7420053297801465,
+          "f1": 0.8014031300593631,
+          "false_positive_rate": 0.12653609831029186,
+          "macro_recording_auc_roc": 0.862428669449651,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 8.0
+        },
+        "final_unseen_fault_type": {
+          "precision": 0.8819493730778329,
+          "recall": 0.6209193870752832,
+          "f1": 0.7287655165672955,
+          "false_positive_rate": 0.09581413210445469,
+          "macro_recording_auc_roc": 0.8120157234541097,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 25.0
+        },
+        "seed": 42
+      },
+      {
+        "threshold": 0.2,
+        "dev": {
+          "precision": 0.8796393688955673,
+          "recall": 0.8662326131991713,
+          "f1": 0.8728845150227391,
+          "false_positive_rate": 0.14497737556561086,
+          "macro_recording_auc_roc": 0.9261878910698138,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 10.0
+        },
+        "final": {
+          "precision": 0.8530411786928599,
+          "recall": 0.7521652231845436,
+          "f1": 0.7994335280580633,
+          "false_positive_rate": 0.14938556067588327,
+          "macro_recording_auc_roc": 0.8589408334630296,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 8.0
+        },
+        "final_unseen_fault_type": {
+          "precision": 0.8757807078417765,
+          "recall": 0.6305796135909394,
+          "f1": 0.7332235886511087,
+          "false_positive_rate": 0.10311059907834101,
+          "macro_recording_auc_roc": 0.81197721285153,
+          "fault_events": 17,
+          "fault_events_detected": 16,
+          "median_detection_delay": 22.5
+        },
+        "seed": 43
+      },
+      {
+        "threshold": 0.25,
+        "dev": {
+          "precision": 0.8849747281360085,
+          "recall": 0.8549866824504291,
+          "f1": 0.8697222849401671,
+          "false_positive_rate": 0.13592760180995475,
+          "macro_recording_auc_roc": 0.9201456747887474,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 10.0
+        },
+        "final": {
+          "precision": 0.8632857693790976,
+          "recall": 0.7456695536309127,
+          "f1": 0.8001787310098302,
+          "false_positive_rate": 0.13613671274961597,
+          "macro_recording_auc_roc": 0.8645962363254827,
+          "fault_events": 17,
+          "fault_events_detected": 16,
+          "median_detection_delay": 5.5
+        },
+        "final_unseen_fault_type": {
+          "precision": 0.8825059101654846,
+          "recall": 0.6217521652231845,
+          "f1": 0.7295290209106898,
+          "false_positive_rate": 0.09543010752688172,
+          "macro_recording_auc_roc": 0.8152160088543067,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 25.0
+        },
+        "seed": 44
+      }
+    ],
+    "federated_xgboost": [
+      {
+        "threshold": 0.3,
+        "dev": {
+          "precision": 0.8744252417948312,
+          "recall": 0.8160698431488607,
+          "f1": 0.8442403367776502,
+          "false_positive_rate": 0.14334841628959277,
+          "macro_recording_auc_roc": 0.9102980141866915,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 10.0
+        },
+        "final": {
+          "precision": 0.8664662945470158,
+          "recall": 0.6722185209860093,
+          "f1": 0.7570812230350779,
+          "false_positive_rate": 0.11943164362519201,
+          "macro_recording_auc_roc": 0.8375071617281907,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 7.0
+        },
+        "training": {
+          "clients": 4,
+          "rounds": 60,
+          "trees": 240,
+          "model_bytes": 474355,
+          "uplink_bytes": 547817,
+          "downlink_bytes": 55217344
+        },
+        "final_unseen_fault_type": {
+          "precision": 0.8972636815920398,
+          "recall": 0.6007661558960693,
+          "f1": 0.7196727853152434,
+          "false_positive_rate": 0.0793010752688172,
+          "macro_recording_auc_roc": 0.7831291529439565,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 39.0
+        },
+        "seed": 42
+      },
+      {
+        "threshold": 0.35,
+        "dev": {
+          "precision": 0.8682926829268293,
+          "recall": 0.7901746078721515,
+          "f1": 0.82739386427022,
+          "false_positive_rate": 0.14660633484162897,
+          "macro_recording_auc_roc": 0.9122178500624623,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 12.0
+        },
+        "final": {
+          "precision": 0.8773664282709297,
+          "recall": 0.6947035309793471,
+          "f1": 0.7754229410671128,
+          "false_positive_rate": 0.1119431643625192,
+          "macro_recording_auc_roc": 0.8427889011275256,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 8.0
+        },
+        "training": {
+          "clients": 4,
+          "rounds": 60,
+          "trees": 240,
+          "model_bytes": 472527,
+          "uplink_bytes": 546230,
+          "downlink_bytes": 55087332
+        },
+        "final_unseen_fault_type": {
+          "precision": 0.8910544727636182,
+          "recall": 0.5939373750832778,
+          "f1": 0.7127723365980412,
+          "false_positive_rate": 0.0837173579109063,
+          "macro_recording_auc_roc": 0.7908950649676412,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 42.0
+        },
+        "seed": 43
+      },
+      {
+        "threshold": 0.3,
+        "dev": {
+          "precision": 0.8780372357210476,
+          "recall": 0.823468481799349,
+          "f1": 0.849877825290165,
+          "false_positive_rate": 0.13990950226244345,
+          "macro_recording_auc_roc": 0.916938864319331,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 9.0
+        },
+        "final": {
+          "precision": 0.8687162442874948,
+          "recall": 0.6965356429047301,
+          "f1": 0.7731558513588463,
+          "false_positive_rate": 0.12135176651305683,
+          "macro_recording_auc_roc": 0.8305010280291503,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 11.0
+        },
+        "training": {
+          "clients": 4,
+          "rounds": 60,
+          "trees": 240,
+          "model_bytes": 481399,
+          "uplink_bytes": 554366,
+          "downlink_bytes": 56257712
+        },
+        "final_unseen_fault_type": {
+          "precision": 0.8896305125148987,
+          "recall": 0.6215856095936043,
+          "f1": 0.7318364545543681,
+          "false_positive_rate": 0.08890168970814132,
+          "macro_recording_auc_roc": 0.7980228924915393,
+          "fault_events": 17,
+          "fault_events_detected": 17,
+          "median_detection_delay": 30.0
+        },
+        "seed": 44
+      }
+    ],
+    "isolation_forest": [
+      {
+        "threshold": 8.0,
+        "dev": {
+          "precision": 0.8064516129032258,
+          "recall": 0.31814146197099735,
+          "f1": 0.4562818336162988,
+          "false_positive_rate": 0.09339366515837104,
+          "macro_recording_auc_roc": 0.8612310047323821,
+          "fault_events": 17,
+          "fault_events_detected": 13,
+          "median_detection_delay": 77.0
+        },
+        "final": {
+          "precision": 0.6897352531351603,
+          "recall": 0.24733510992671554,
+          "f1": 0.364104450165502,
+          "false_positive_rate": 0.1282642089093702,
+          "macro_recording_auc_roc": 0.7500009779730118,
+          "fault_events": 17,
+          "fault_events_detected": 11,
+          "median_detection_delay": 49.0
+        },
+        "seed": 42
+      },
+      {
+        "threshold": 8.0,
+        "dev": {
+          "precision": 0.8417945690672963,
+          "recall": 0.3165137614678899,
+          "f1": 0.4600494676846973,
+          "false_positive_rate": 0.07276018099547511,
+          "macro_recording_auc_roc": 0.8755288166764589,
+          "fault_events": 17,
+          "fault_events_detected": 12,
+          "median_detection_delay": 55.0
+        },
+        "final": {
+          "precision": 0.7629455279085406,
+          "recall": 0.37791472351765487,
+          "f1": 0.5054577856983739,
+          "false_positive_rate": 0.13536866359447006,
+          "macro_recording_auc_roc": 0.7680135874668492,
+          "fault_events": 17,
+          "fault_events_detected": 10,
+          "median_detection_delay": 22.5
+        },
+        "seed": 43
+      },
+      {
+        "threshold": 8.0,
+        "dev": {
+          "precision": 0.8711656441717791,
+          "recall": 0.3572062740455756,
+          "f1": 0.5066638681918354,
+          "false_positive_rate": 0.06461538461538462,
+          "macro_recording_auc_roc": 0.851094613379847,
+          "fault_events": 17,
+          "fault_events_detected": 12,
+          "median_detection_delay": 54.0
+        },
+        "final": {
+          "precision": 0.7159647404505387,
+          "recall": 0.2435043304463691,
+          "f1": 0.36341039025602784,
+          "false_positive_rate": 0.11136712749615975,
+          "macro_recording_auc_roc": 0.7411265919039933,
+          "fault_events": 17,
+          "fault_events_detected": 9,
+          "median_detection_delay": 29.0
+        },
+        "seed": 44
+      }
+    ]
+  }
+}

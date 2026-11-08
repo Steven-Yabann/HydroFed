@@ -1,0 +1,86 @@
+{
+  "generated_at": "2026-11-08T10:40:43+00:00",
+  "source": {
+    "dataset": "SKAB",
+    "checkpoint": "artifacts/skab_runs/hybrid_latent4_seed42.pt",
+    "score": "hybrid",
+    "threshold_mad": 24.0,
+    "smoothing": 0.2,
+    "calibration_tail": 0.25,
+    "baseline_seconds": 400
+  },
+  "sensors": [
+    {
+      "key": "accelerometer_1",
+      "label": "Accelerometer 1 RMS",
+      "unit": "g"
+    },
+    {
+      "key": "accelerometer_2",
+      "label": "Accelerometer 2 RMS",
+      "unit": "g"
+    },
+    {
+      "key": "current",
+      "label": "Motor current",
+      "unit": "A"
+    },
+    {
+      "key": "pressure",
+      "label": "Pressure",
+      "unit": "bar"
+    },
+    {
+      "key": "temperature",
+      "label": "Motor temperature",
+      "unit": "\u00b0C"
+    },
+    {
+      "key": "thermocouple",
+      "label": "Fluid temperature",
+      "unit": "\u00b0C"
+    },
+    {
+      "key": "voltage",
+      "label": "Voltage",
+      "unit": "V"
+    },
+    {
+      "key": "flow_rate",
+      "label": "Volume flow rate",
+      "unit": "L/min"
+    }
+  ],
+  "plants": [
+    {
+      "id": "plant_1",
+      "recordings": 2,
+      "seconds": 1118,
+      "alert_seconds": 242
+    },
+    {
+      "id": "plant_2",
+      "recordings": 8,
+      "seconds": 8061,
+      "alert_seconds": 2783
+    },
+    {
+      "id": "plant_3",
+      "recordings": 8,
+      "seconds": 8977,
+      "alert_seconds": 2620
+    },
+    {
+      "id": "plant_4",
+      "recordings": 9,
+      "seconds": 10020,
+      "alert_seconds": 2684
+    },
+    {
+      "id": "plant_5",
+      "recordings": 8,
+      "seconds": 8708,
+      "alert_seconds": 2700
+    }
+  ]
+}

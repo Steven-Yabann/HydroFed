@@ -13,13 +13,11 @@ services:
       HYDROFED_GOOGLE_CLIENT_SECRET: ${HYDROFED_GOOGLE_CLIENT_SECRET:-}
       HYDROFED_MICROSOFT_CLIENT_ID: ${HYDROFED_MICROSOFT_CLIENT_ID:-}
       HYDROFED_MICROSOFT_CLIENT_SECRET: ${HYDROFED_MICROSOFT_CLIENT_SECRET:-}
-      HYDROFED_FEED_PATH: /artifacts/operator
-      HYDROFED_COMPARISON_PATH: /artifacts/comparison
-      HYDROFED_ALLOW_TRAINING: "0"
+      HYDROFED_ADMIN_EMAIL: ${HYDROFED_ADMIN_EMAIL:-}
+      HYDROFED_ADMIN_NAME: ${HYDROFED_ADMIN_NAME:-}
+      HYDROFED_ADMIN_PASSWORD: ${HYDROFED_ADMIN_PASSWORD:-}
     volumes:
       - hydrofed-data:/data
-      - ./artifacts/operator:/artifacts/operator:ro
-      - ./artifacts/comparison:/artifacts/comparison:ro
     expose:
       - "8000"
     healthcheck:
