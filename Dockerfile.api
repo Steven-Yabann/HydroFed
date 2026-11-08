@@ -2,12 +2,17 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HYDROFED_DB_PATH=/data/experiments.db
+    HYDROFED_DB_PATH=/data/experiments.db \
+    HYDROFED_FEED_PATH=/app/published/operator \
+    HYDROFED_COMPARISON_PATH=/app/published/comparison \
+    HYDROFED_PARTITION_SUMMARY=/app/published/partition_summary.json \
+    HYDROFED_ALLOW_TRAINING=0
 
 WORKDIR /app
 
 COPY pyproject.toml ./
 COPY src ./src
+COPY deploy/published ./published
 
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir . \

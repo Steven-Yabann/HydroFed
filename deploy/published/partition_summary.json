@@ -1,0 +1,27 @@
+{
+  "plant_1": {
+    "windows": 10132,
+    "anomalies": 188,
+    "anomaly_rate": 0.018555073035925778
+  },
+  "plant_2": {
+    "windows": 8429,
+    "anomalies": 3153,
+    "anomaly_rate": 0.3740657254715862
+  },
+  "plant_3": {
+    "windows": 9049,
+    "anomalies": 3239,
+    "anomaly_rate": 0.35794010387888164
+  },
+  "plant_4": {
+    "windows": 10101,
+    "anomalies": 3574,
+    "anomaly_rate": 0.3538263538263538
+  },
+  "plant_5": {
+    "windows": 8780,
+    "anomalies": 3201,
+    "anomaly_rate": 0.3645785876993166
+  }
+}

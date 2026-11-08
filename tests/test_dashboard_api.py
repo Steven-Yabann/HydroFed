@@ -360,3 +360,28 @@ def test_alert_episodes_merge_short_gaps():
     episodes = PlantTimeline("plant_1", [recording]).episodes
 
     assert [(episode["start"], episode["end"]) for episode in episodes] == [(10, 24), (55, 57)]
+
+
+def test_first_admin_comes_from_the_environment_on_a_fresh_database(tmp_path, monkeypatch):
+    monkeypatch.setenv("HYDROFED_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("HYDROFED_ADMIN_EMAIL", "Owner@Example.com")
+    monkeypatch.setenv("HYDROFED_ADMIN_NAME", "Olu Owner")
+    monkeypatch.setenv("HYDROFED_ADMIN_PASSWORD", PASSWORD)
+    database = tmp_path / "experiments.db"
+    client = TestClient(create_app(database, feed_path=tmp_path / "feed", launcher=FakeLauncher()))
+
+    token = client.post("/api/auth/login", json={"email": "owner@example.com", "password": PASSWORD}).json()["token"]
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"}).json()
+    assert me["user"]["role"] == "admin"
+
+    # Restarting with different variables must not add a second administrator.
+    monkeypatch.setenv("HYDROFED_ADMIN_EMAIL", "someone-else@example.com")
+    create_app(database, feed_path=tmp_path / "feed", launcher=FakeLauncher())
+    assert [user["email"] for user in UserStore(database).list()] == ["owner@example.com"]
+
+
+def test_admin_variables_are_ignored_once_an_administrator_exists(app_setup, monkeypatch, tmp_path):
+    _, users, _ = app_setup
+    monkeypatch.setenv("HYDROFED_ADMIN_EMAIL", "late@example.com")
+    assert auth.bootstrap_admin(users) is None
+    assert users.find_by_email("late@example.com") is None

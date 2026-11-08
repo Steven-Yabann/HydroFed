@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: setup test data partition partition-skab partition-synthetic baseline federated evaluate monitor-up monitor-down operator-feed admin api dashboard
+.PHONY: setup test data partition partition-skab partition-synthetic baseline federated evaluate monitor-up monitor-down operator-feed publish admin api dashboard
 
 setup:
 	python3.11 -m venv .venv
@@ -35,6 +35,13 @@ monitor-down:
 	docker compose -f monitoring/docker-compose.yml down
 operator-feed:
 	$(PYTHON) scripts/build_operator_feed.py
+# Copy the results the hosted API serves into deploy/published, which is
+# committed so the Render build (which cannot see artifacts/ or data/) has them.
+publish:
+	rm -rf deploy/published && mkdir -p deploy/published/operator deploy/published/comparison
+	cp artifacts/operator/*.json deploy/published/operator/
+	cp artifacts/comparison/regimes.json artifacts/comparison/models.json artifacts/comparison/scenarios.json artifacts/comparison/personalised.json deploy/published/comparison/
+	cp data/partitions_skab/partition_summary.json deploy/published/
 admin:
 	$(PYTHON) scripts/create_user.py --role admin --email $(EMAIL) --name "$(NAME)"
 api:

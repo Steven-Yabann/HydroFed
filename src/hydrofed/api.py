@@ -24,6 +24,7 @@ from hydrofed.auth import (
     AuthError,
     UserStore,
     authorization_redirect,
+    bootstrap_admin,
     configured_providers,
     exchange_code,
     issue_session,
@@ -136,6 +137,7 @@ def create_app(
 
     store = ExperimentStore(database_path)
     users = UserStore(database_path)
+    bootstrap_admin(users)
     operations = OperationsStore(database_path, feed_directory, **({"clock": clock} if clock else {}))
     training = launcher or TrainingLauncher(database_path)
     key = secret_key(database_path)
