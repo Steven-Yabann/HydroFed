@@ -33,8 +33,15 @@ Persistent disk mounted at /data
 ```
 
 The frontend is a Vite/React static site. The API is a FastAPI Docker service.
-The persistent disk preserves saved experiment runs and evaluation metrics when
-the API restarts or redeploys.
+The persistent disk preserves accounts, alert reviews, administrator settings,
+saved experiment runs and evaluation metrics when the API restarts or redeploys.
+
+The API image also carries the results it serves, from `deploy/published/`:
+the operator replay feed, the comparison results and the plant partition
+summary. They are produced under the git-ignored `artifacts/` and `data/`
+folders, so `make publish` copies them into `deploy/published/`, which is
+committed. Run `make operator-feed publish` and commit the result whenever the
+model or the comparison results change.
 
 ## Local Docker Compose verification
 
@@ -45,8 +52,9 @@ cp deployment.env.example deployment.env
 docker compose --env-file deployment.env -f docker-compose.deploy.yml up --build
 ```
 
-Open `http://localhost:8080` and confirm that the dashboard reports
-`API connected`.
+Set `HYDROFED_ADMIN_EMAIL`, `HYDROFED_ADMIN_NAME` and `HYDROFED_ADMIN_PASSWORD`
+in `deployment.env` before the first start, then open `http://localhost:8080`
+and sign in with that account.
 
 Verify the API:
 
@@ -84,7 +92,33 @@ API environment variables:
 ```text
 HYDROFED_DB_PATH=/data/experiments.db
 HYDROFED_ALLOWED_ORIGINS=https://hydrofed-dashboard.onrender.com
+HYDROFED_FRONTEND_URL=https://hydrofed-dashboard.onrender.com
+HYDROFED_PUBLIC_API_URL=https://hydrofed.onrender.com
+HYDROFED_SECRET_KEY=<a long random string>
+HYDROFED_ADMIN_EMAIL=<first administrator's email>
+HYDROFED_ADMIN_NAME=<their name>
+HYDROFED_ADMIN_PASSWORD=<at least 10 characters, or leave unset for SSO only>
 ```
+
+`HYDROFED_SECRET_KEY` signs session tokens; changing it signs everyone out.
+The `HYDROFED_ADMIN_*` variables only create an account while the database has
+no active administrator, so they can be removed once that person has signed in.
+Everyone else is added from **Users & access** in the dashboard.
+
+Single sign-on is optional. To enable it, add the client ID and secret for
+each provider and register these redirect URIs with the provider:
+
+```text
+HYDROFED_GOOGLE_CLIENT_ID / HYDROFED_GOOGLE_CLIENT_SECRET
+  https://hydrofed.onrender.com/api/auth/oauth/google/callback
+HYDROFED_MICROSOFT_CLIENT_ID / HYDROFED_MICROSOFT_CLIENT_SECRET
+  https://hydrofed.onrender.com/api/auth/oauth/microsoft/callback
+```
+
+Training from the dashboard is switched off in the image
+(`HYDROFED_ALLOW_TRAINING=0`): it has no training data and a web service is
+the wrong place for long simulations. Administrators can still change the
+federation settings and plant nodes.
 
 The API health endpoint is:
 
@@ -108,11 +142,26 @@ Frontend build-time environment variable:
 VITE_API_BASE_URL=https://hydrofed.onrender.com
 ```
 
+The dashboard uses hash routes (`#/fleet`), so the static site needs no
+rewrite rules. `frontend/package.json` asks for Node 22.12 or newer, which
+Vite requires.
+
 The public dashboard is:
 
 ```text
 https://hydrofed-dashboard.onrender.com
 ```
+
+### Releasing
+
+Both services build from `feature/deployment`. After a change is merged to
+`main`, release it by moving that branch to `main`:
+
+```bash
+git push origin main:feature/deployment
+```
+
+Render then rebuilds both services.
 
 ## Importing experiment history
 
@@ -143,18 +192,21 @@ the active database.
 
 ## Deployment verification
 
-The public deployment was verified by confirming that:
+After a release, confirm that:
 
-1. The dashboard reports `API connected`.
-2. A saved federated run is selectable.
-3. Five plant evaluation results are displayed.
-4. The same run remains visible after restarting the Render API service.
+1. `https://hydrofed.onrender.com/api/health` returns `{"status":"ok"}`.
+2. The administrator can sign in at the dashboard.
+3. **Fleet overview** shows five plants and **Alerts** lists alerts.
+4. **Model performance** shows all four comparison sections.
+5. An operator added from **Users & access** sees only Fleet, Alerts and
+   Model performance.
+6. An alert review survives a restart of the API service.
 
 ## Current limitations
 
-- The dashboard is read-only; training is started from the command line.
-- Role workspaces are interface views and do not yet enforce authentication or
-  role-based authorization.
+- Plant telemetry is a replay of SKAB recordings scored offline by the
+  federated model, not a live connection to plant sensors.
+- Training runs are started locally or in Colab, not from the hosted dashboard.
 - SQLite supports one API instance only.
 - Long-running GPU experiments should run in Google Colab or Modal, then save
   results for dashboard display.
