@@ -202,6 +202,23 @@ class UserStore:
         return self.get(user["user_id"])
 
 
+def bootstrap_admin(users: UserStore) -> dict | None:
+    """Create the first administrator from the environment on a fresh database.
+
+    Hosted deployments have no shell to run ``scripts/create_user.py``, so
+    ``HYDROFED_ADMIN_EMAIL`` (with ``HYDROFED_ADMIN_NAME`` and optionally
+    ``HYDROFED_ADMIN_PASSWORD``) creates one when no active administrator
+    exists. Without a password the account signs in with Google or Microsoft.
+    Once an administrator exists the variables are ignored.
+    """
+    email = os.environ.get("HYDROFED_ADMIN_EMAIL", "").strip()
+    if not email or users.count_active_admins() > 0 or users.find_by_email(email):
+        return None
+    name = os.environ.get("HYDROFED_ADMIN_NAME", "").strip() or email.split("@")[0]
+    password = os.environ.get("HYDROFED_ADMIN_PASSWORD") or None
+    return users.create(email, name, "admin", password)
+
+
 _DUMMY_HASH = bcrypt.hashpw(b"hydrofed-dummy-password", bcrypt.gensalt()).decode()
 
 
