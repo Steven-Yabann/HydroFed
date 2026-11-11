@@ -242,6 +242,90 @@ defend against unreliable or malicious clients, and a validation set would
 put plant data on the server, against HydroFed's privacy aim. The screening
 script and its results are kept in `artifacts/comparison/strategy-screen/`.
 
+## Learning from alert reviews
+
+```bash
+.venv/bin/python scripts/run_comparison.py feedback --jobs 3
+```
+
+Operators mark dashboard alerts as resolved (a real fault) or as a false
+alarm. This development-only analysis measures three ways the detector could
+use those reviews. A simulated reviewer follows the SKAB labels: an alert that
+overlaps a labelled fault is resolved 30 seconds after the fault ends, and any
+other alert is a false alarm. Each plant's earlier development recordings
+supply the reviews, and its later ones (8 recordings, 8 faults) are evaluated.
+Final recordings are not used. Results go to `artifacts/comparison/feedback.json`.
+
+Where false alarms come from sets what reviews can fix. In the operator feed
+(seed 42), 96% of development false-alarm seconds come after a labelled fault
+ends, inside alerts that do overlap the fault. Only 4% come from alerts with no
+fault. Alerts that ring on after a fault would be reviewed as resolved, not as
+false alarms.
+
+- **Re-baseline on resolved**: after a resolved fault, the plant's normal
+  reference is updated from the next 60 seconds. *Re-learn* replaces the
+  reference; *re-centre* keeps the original spread and calibration and only
+  shifts each sensor's normal level to where the plant settled. Variants
+  shelve alarms during that minute, or have the reviewer resolve too early,
+  halfway through the fault.
+- **Per-plant threshold**: rises just above the plant's past false alarms,
+  capped at 48 and kept below every past confirmed fault's peak.
+- **Reviews as labels**: federated XGBoost trained on the earlier recordings
+  with labels taken from reviewed alerts (whole resolved alerts count as
+  faults; faults that never alerted count as normal), alerting at a fault
+  probability of 0.5.
+
+### Later development recordings (mean over seeds 42–44)
+
+| Method | Recall | False alarm rate | Within-recording AUC | Faults | Median delay |
+|---|---|---|---|---|---|
+| Current detector | 0.750 | 5.9% | 0.915 | 7.7/8 | 53 s |
+| Re-centre after a resolved fault | 0.750 | 5.4% | 0.937 | 7.7/8 | 53 s |
+| Re-centre, alarms shelved for the minute | 0.750 | 3.8% | 0.957 | 7.7/8 | 53 s |
+| Re-learn after a resolved fault | 0.750 | 19.7% | 0.856 | 7.7/8 | 53 s |
+| Re-centre, resolved too early | 0.563 | 34.7% | 0.684 | 7.7/8 | 53 s |
+| Re-learn, resolved too early | 0.709 | 46.5% | 0.560 | 7.7/8 | 53 s |
+| Per-plant threshold from false alarms | 0.692 | 4.8% | 0.915 | 7.7/8 | 53 s |
+| Federated XGBoost, labels from reviews | 0.738 | 5.4% | 0.947 | 8/8 | 28 s |
+| Federated XGBoost, true labels | 0.558 | 13.3% | 0.903 | 8/8 | 20 s |
+
+### What the reviews can and cannot do
+
+- **Re-centring after a resolved fault works where it acts.** On seed 42 it
+  removed every false alarm after the new reference took over (39 seconds to
+  0) without losing a fault. The 194 false-alarm seconds that remain fall in
+  the 90 seconds before it takes over. SKAB recordings end about 170 seconds
+  after their fault, so little time is left to benefit. In longer operation
+  the effect would build up, but this data cannot show that, or whether a
+  later fault would be hidden.
+- **Re-learning from one minute is fragile.** A minute of a plant settling
+  after a fault has too little spread, so normal operation afterwards looks
+  abnormal and false alarms more than triple.
+- **A wrong review is costly.** Resolving a fault while it is still happening
+  pulls the fault into the reference: false alarms rise about sixfold and
+  recall falls (re-centring: 5.9% to 34.7% false alarms, recall 0.750 to 0.563),
+  so a resolution should only update the reference after an administrator
+  confirms it.
+- **Learned thresholds trade recall for false alarms.** Only plant_5's
+  threshold rose, in two of three seeds (to 31 and 37), and that cost recall
+  (0.750 to 0.692) more than it saved in false alarms (5.9% to 4.8%).
+- **Reviews make usable labels.** Federated XGBoost trained on review labels
+  matched the detector's recall and false alarm rate, with higher AUC and
+  half the delay. It also beat the same model trained on the true labels at
+  the fixed 0.5 cut-off, which is surprising: review labels mark whole alerts,
+  so they contain more fault examples. Treat that comparison as unsettled
+  rather than as evidence that review labels are better.
+
+### Limits
+
+- Development-only analysis of 8 later recordings and 3 seeds; it is not a
+  held-out result.
+- The simulated reviewer is perfect apart from the deliberate too-early case.
+  Real reviews would contain mistakes, and the dashboard shows SKAB's label
+  in the review drawer.
+- Review delay, reference length and the threshold cap were set before the
+  full run to fit SKAB's short recordings, not tuned.
+
 ## LSTM against transformer and classic machine learning
 
 ```bash
