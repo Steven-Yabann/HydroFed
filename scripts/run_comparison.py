@@ -18,6 +18,12 @@ scenarios
     plants whose sensors differ, and plants with little training data. An
     unchanged baseline runs alongside for reference. Alert settings stay frozen.
 
+feedback
+    Measure what alert reviews could teach the detector, on development
+    recordings only: re-baselining after a resolved fault, a per-plant
+    threshold learned from false alarms, and reviews as XGBoost labels.
+    Earlier recordings supply the reviews; later ones are evaluated.
+
 publish
     Save existing comparison results to an experiments database so the
     dashboard can show them. ``regimes`` and ``models`` can also save directly
@@ -41,6 +47,14 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from hydrofed.experiments.feedback import (
+    alert_episodes,
+    learned_threshold,
+    rebaselined_scores,
+    resolution_window,
+    review_labels,
+    split_by_time,
+)
 from hydrofed.experiments.communication import (
     break_even_days,
     federated_bytes,
@@ -57,10 +71,17 @@ from hydrofed.experiments.publish import (
 from hydrofed.experiments.recordings import ROLES, load_skab_recordings, plant_training_windows
 from hydrofed.experiments.regimes import ALL_REGIMES, REGIMES, SCORES, autoencoder_scores, parameter_bytes, train_regime
 from hydrofed.experiments.scenarios import HETEROGENEOUS_PROFILES, SCARCE_PLANTS, SCARCE_SECONDS
-from hydrofed.experiments.scoring import MAD_THRESHOLDS, alert_metrics, choose_threshold, summarise_seeds
+from hydrofed.experiments.scoring import (
+    MAD_THRESHOLDS,
+    RecordingScores,
+    alert_metrics,
+    choose_threshold,
+    summarise_seeds,
+)
 from hydrofed.models.lstm_autoencoder import build_model
 from hydrofed.models.transformer_autoencoder import build_transformer_model
 from hydrofed.storage import ExperimentStore
+from hydrofed.training.local import reconstruction_signed_residuals
 
 ARCHITECTURES = {"lstm": build_model, "transformer": build_transformer_model}
 CLASSIC_SUPERVISED = {"random_forest", "xgboost", "federated_xgboost"}
@@ -160,13 +181,14 @@ def autoencoder_job(job: dict) -> dict:
     }
 
 
-def run_jobs(jobs: list[dict], n_jobs: int) -> list[dict]:
+def run_jobs(jobs: list[dict], n_jobs: int, worker=None) -> list[dict]:
+    worker = worker or autoencoder_job
     threads = max(1, (os.cpu_count() or 2) // max(1, n_jobs))
     jobs = [job | {"threads": threads} for job in jobs]
     if n_jobs <= 1:
-        return [autoencoder_job(job) for job in jobs]
+        return [worker(job) for job in jobs]
     with ProcessPoolExecutor(max_workers=n_jobs) as pool:
-        return list(pool.map(autoencoder_job, jobs))
+        return list(pool.map(worker, jobs))
 
 
 def summarise(runs: list[dict], label: str, scores=SCORES) -> dict:
@@ -497,6 +519,141 @@ def run_scenarios(args) -> dict:
     }
 
 
+FEEDBACK_METHODS = {
+    "detector": "Current detector",
+    "relearn": "Re-learn normal after a resolved fault",
+    "relearn_shelved": "Re-learn, alarms shelved while re-learning",
+    "relearn_early": "Re-learn, resolved too early",
+    "recentre": "Re-centre normal after a resolved fault",
+    "recentre_shelved": "Re-centre, alarms shelved while re-learning",
+    "recentre_early": "Re-centre, resolved too early",
+    "threshold": "Per-plant threshold from false alarms",
+}
+
+
+def after_fault_share(scores: RecordingScores, thresholds) -> float | None:
+    """Share of false-alarm seconds that come after each recording's fault ends."""
+    after = total = 0
+    for recording_id in dict.fromkeys(scores.recording_ids.tolist()):
+        mask = scores.recording_ids == recording_id
+        threshold = thresholds[recording_id] if isinstance(thresholds, dict) else thresholds
+        alarms = (scores.scores[mask] > threshold) & (scores.labels[mask] == 0)
+        fault = np.flatnonzero(scores.labels[mask])
+        total += int(alarms.sum())
+        if len(fault):
+            after += int(alarms[fault[-1] + 1:].sum())
+    return after / total if total else None
+
+
+def feedback_job(job: dict) -> dict:
+    """Train one seed's federated LSTM and apply every review method to it."""
+    args = job["args"]
+    torch.set_num_threads(job["threads"])
+    recordings = load_skab_recordings(args.partitions, args.scaling)
+    plant_windows = plant_training_windows(recordings)
+    n_features = next(iter(plant_windows.values())).shape[2]
+    result = train_regime(
+        "federated", plant_windows, lambda: build_model(n_features, lstm_config(args)),
+        rounds=args.rounds, epochs=args.epochs, batch_size=args.batch_size,
+        learning_rate=args.learning_rate, seed=job["seed"], device=args.device,
+    )
+    model = next(iter(result.models.values()))
+    past, future = split_by_time(recordings)
+    threshold = args.mad_multiplier
+
+    def components(windows):
+        return [windows.mean(axis=1), reconstruction_signed_residuals(model, windows, device=args.device)]
+
+    scored = {}
+    for recording in past + future:
+        baseline, test = components(recording.train_windows), components(recording.test_windows)
+        labels = recording.test_labels
+        original = rebaselined_scores(baseline, test, None, args.smoothing, args.calibration_tail)
+        careful = resolution_window(labels, original, threshold)
+        early = resolution_window(labels, original, threshold, early=True)
+        scored[recording.recording_id] = {"plant": recording.plant, "labels": labels, "detector": original}
+        for mode in ("relearn", "recentre"):
+            for suffix, resolution, shelve in (("", careful, False), ("_shelved", careful, True), ("_early", early, False)):
+                scored[recording.recording_id][mode + suffix] = rebaselined_scores(
+                    baseline, test, resolution, args.smoothing, args.calibration_tail, shelve=shelve, mode=mode,
+                )
+
+    # Each plant's threshold learned from reviews of its earlier recordings.
+    peaks: dict[str, dict[str, list[float]]] = {}
+    for recording in past:
+        item = scored[recording.recording_id]
+        for episode in alert_episodes(item["detector"], item["labels"], threshold):
+            kind = "fault" if episode.real_fault else "false_alarm"
+            peaks.setdefault(recording.plant, {"fault": [], "false_alarm": []})[kind].append(episode.peak)
+    plant_thresholds = {
+        plant: learned_threshold(found["fault"], found["false_alarm"], threshold) for plant, found in peaks.items()
+    }
+
+    def future_scores(method):
+        return RecordingScores(
+            scores=np.concatenate([scored[r.recording_id][method] for r in future]),
+            labels=np.concatenate([scored[r.recording_id]["labels"] for r in future]),
+            recording_ids=np.concatenate([np.repeat(r.recording_id, r.test_mask.sum()) for r in future]),
+            roles=np.concatenate([np.repeat(r.role, r.test_mask.sum()) for r in future]),
+        )
+
+    per_recording = {r.recording_id: plant_thresholds.get(r.plant, threshold) for r in future}
+    settings = {name: (name, threshold) for name in FEEDBACK_METHODS} | {"threshold": ("detector", per_recording)}
+    metrics = {}
+    for name, (method, limit) in settings.items():
+        scores = future_scores(method)
+        metrics[name] = alert_metrics(scores, limit, args.persistence) | {
+            "after_fault_false_alarm_share": after_fault_share(scores, limit),
+        }
+    print(f"feedback seed {job['seed']}: {result.seconds:.0f}s, thresholds {plant_thresholds}", flush=True)
+    return {
+        "seed": job["seed"],
+        "metrics": metrics,
+        "plant_thresholds": plant_thresholds,
+        "review_labels": {
+            r.recording_id: review_labels(scored[r.recording_id]["detector"], scored[r.recording_id]["labels"],
+                                          threshold).tolist()
+            for r in past
+        },
+        "recordings": {"past": [r.recording_id for r in past], "future": [r.recording_id for r in future]},
+    }
+
+
+def run_feedback(args) -> dict:
+    jobs = [{"args": args, "seed": seed} for seed in args.seeds]
+    runs = run_jobs(jobs, args.jobs, feedback_job)
+
+    # XGBoost cannot share a process with PyTorch on macOS.
+    with tempfile.TemporaryDirectory() as folder:
+        labels_path, output = Path(folder) / "labels.json", Path(folder) / "xgboost.json"
+        labels_path.write_text(json.dumps({str(run["seed"]): run["review_labels"] for run in runs}))
+        subprocess.run([
+            sys.executable, "-m", "hydrofed.experiments.feedback", "--partitions", args.partitions,
+            "--review-labels", str(labels_path), "--output", str(output),
+        ], check=True)
+        trees = json.loads(output.read_text())
+    for run in runs:
+        for name, metrics in trees[str(run["seed"])].items():
+            run["metrics"][f"xgboost_{name}"] = metrics
+
+    names = {
+        **FEEDBACK_METHODS,
+        "xgboost_review_labels": "Federated XGBoost, labels from reviews",
+        "xgboost_true_labels": "Federated XGBoost, true labels (reference)",
+    }
+    summary = {name: summarise_seeds([run["metrics"][name] for run in runs]) for name in names}
+    print("\nLater development recordings (mean over seeds)")
+    print(f"| Method | {METRIC_HEADER} | False alarms after the fault |")
+    print("|---" * 10 + "|")
+    for name, label in names.items():
+        share = summary[name].get("after_fault_false_alarm_share", {}).get("mean")
+        print(f"| {label} | {metric_cells(summary[name])} | {f'{share:.0%}' if share is not None else 'n/a'} |")
+    print("\nLearned plant thresholds:", [run["plant_thresholds"] for run in runs])
+    for run in runs:
+        run.pop("review_labels")
+    return {"summary": summary, "runs": runs, "methods": names}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -530,6 +687,11 @@ def main() -> None:
     scenarios.add_argument("--mad-multiplier", type=float, default=24.0)
     scenarios.add_argument("--output", default="artifacts/comparison/scenarios.json")
 
+    feedback = commands.add_parser("feedback", help="what alert reviews could teach the detector")
+    add_common_arguments(feedback)
+    feedback.add_argument("--mad-multiplier", type=float, default=24.0)
+    feedback.add_argument("--output", default="artifacts/comparison/feedback.json")
+
     publisher = commands.add_parser("publish", help="save existing JSON results for the dashboard")
     publisher.add_argument("--regimes", help="result of the regimes command")
     publisher.add_argument("--models", help="result of the models command")
@@ -545,7 +707,9 @@ def main() -> None:
                 save_result(args.db, experiment, json.loads(Path(path).read_text()), rows_for)
         return
 
-    commands_run = {"regimes": run_regimes, "models": run_models, "scenarios": run_scenarios}
+    commands_run = {
+        "regimes": run_regimes, "models": run_models, "scenarios": run_scenarios, "feedback": run_feedback,
+    }
     result = commands_run[args.command](args)
     result = {"config": vars(args)} | result
 
