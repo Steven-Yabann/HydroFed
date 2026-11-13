@@ -326,6 +326,66 @@ false alarms.
 - Review delay, reference length and the threshold cap were set before the
   full run to fit SKAB's short recordings, not tuned.
 
+## Plants that miss federated rounds
+
+```bash
+.venv/bin/python scripts/run_comparison.py connectivity --jobs 6
+```
+
+Remote plants may not reach the server every round. Only the plants that
+connect in a round train and are averaged, weighted by examples as in Flower.
+A plant that missed rounds receives the final shared model when it
+reconnects. The scenarios were fixed before running:
+
+- **full**: all five plants every round, the reference.
+- **sampled k of 5**: k plants drawn at random each round, as Flower's
+  fraction_fit does (0.8, 0.6 and 0.4).
+- **late join**: plant_4 and plant_5 are offline for rounds 1–15 and join for
+  the last 5.
+- **never join**: plant_4 and plant_5 miss every round and only receive the
+  final model, like a new plant joining a trained fleet.
+
+Results use the frozen alert policy on final recordings, with no new tuning,
+and go to `artifacts/comparison/connectivity.json`.
+
+### Results, final recordings (mean ± sd over seeds 42–44)
+
+Within-recording AUC-ROC. "Affected" means plant_4 and plant_5.
+
+| Scenario | MB moved | Full detector | Model only | Affected: full detector | Affected: model only | Affected: faults | Others: model only |
+|---|---|---|---|---|---|---|---|
+| full | 83.4 | 0.845 ± 0.002 | 0.803 ± 0.020 | 0.885 | 0.904 ± 0.023 | 8/8 | 0.713 ± 0.018 |
+| sampled 4 of 5 | 66.7 | 0.843 ± 0.003 | 0.791 ± 0.027 | 0.882 | 0.879 ± 0.028 | 8/8 | 0.714 ± 0.031 |
+| sampled 3 of 5 | 50.0 | 0.843 ± 0.001 | 0.776 ± 0.038 | 0.881 | 0.868 ± 0.030 | 7.7/8 | 0.694 ± 0.048 |
+| sampled 2 of 5 | 33.3 | 0.844 ± 0.003 | 0.781 ± 0.004 | 0.882 | 0.870 ± 0.045 | 7.7/8 | 0.702 ± 0.035 |
+| late join | 58.4 | 0.844 ± 0.000 | 0.793 ± 0.012 | 0.880 | 0.886 ± 0.031 | 7.7/8 | 0.710 ± 0.005 |
+| never join | 50.0 | 0.841 ± 0.001 | 0.799 ± 0.004 | 0.878 | 0.837 ± 0.024 | 8/8 | 0.765 ± 0.016 |
+
+- **Missing rounds barely changed detection.** The full detector's AUC-ROC
+  stayed between 0.841 and 0.845 in every scenario, because its
+  baseline-distance part needs no training.
+- **The model degraded gradually.** With 2 to 4 plants per round, the
+  model-only AUC-ROC fell by 0.01 to 0.03, within the spread between seeds.
+- **Plants that never connected got a weaker model.** For plant_4 and
+  plant_5, the model-only AUC-ROC fell from 0.904 to 0.837, about three
+  standard deviations. The full detector still caught all 8 of their faults.
+  Joining for the last 5 rounds recovered most of the loss (0.886).
+- **The other plants gained when those two stayed away** (0.713 to 0.765): a
+  shared model fits the plants that train it, the same penalty for unlike
+  plants seen under heterogeneity.
+- **Communication fell in proportion to participation**, from 83.4 MB with
+  every plant to 33.3 MB with two plants per round.
+
+### Limits
+
+- Dropout was simulated per round. Real outages may last longer or fall
+  mid-round, and late uploads from a stale model were not modelled.
+- Clients were sampled uniformly. Plants that drop out because of their
+  location or size, and so differ from the rest, were tested only through
+  the late-join and never-join cases.
+- Three seeds and 8 affected faults; differences of a few hundredths in the
+  model-only score are within run-to-run noise.
+
 ## LSTM against transformer and classic machine learning
 
 ```bash
