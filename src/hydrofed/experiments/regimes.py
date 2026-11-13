@@ -72,17 +72,23 @@ def run_fedavg(
     seed: int,
     device: str = "cpu",
     proximal_mu: float = 0.0,
+    participation: list[list[str]] | None = None,
 ):
     """Run FedAvg over the given clients and return the global model.
 
     A positive ``proximal_mu`` turns this into FedProx: clients add a
     proximal term that keeps their weights near the round's global model.
+    ``participation`` lists the clients that reach the server in each round;
+    only they train and are averaged, and a round with none leaves the
+    global model unchanged. By default every client takes part every round.
 
     Returns the model, the weighted loss per round, the bytes moved per round,
     and the total uplink and downlink bytes.
     """
     if rounds <= 0:
         raise ValueError("rounds must be positive")
+    if participation is not None and len(participation) != rounds:
+        raise ValueError("participation needs one list of clients per round")
 
     set_random_seed(seed)
     global_model = model_factory()
@@ -92,7 +98,10 @@ def run_fedavg(
 
     for round_index in range(rounds):
         results, sizes, losses = [], [], []
-        for client_index, windows in enumerate(client_windows.values()):
+        present = set(client_windows) if participation is None else set(participation[round_index])
+        for client_index, (client, windows) in enumerate(client_windows.items()):
+            if client not in present:
+                continue
             set_random_seed(seed + client_index + round_index * 100)
             model = model_factory()
             model.set_parameters_numpy(state)
@@ -105,6 +114,10 @@ def run_fedavg(
             uplink += parameter_bytes(results[-1])
             sizes.append(len(windows))
 
+        if not results:
+            history.append(float("nan"))
+            round_bytes.append(0)
+            continue
         state = federated_average(results, sizes)
         history.append(float(np.average(losses, weights=sizes)))
         round_bytes.append(sum(parameter_bytes(item) for item in results) + parameter_bytes(state) * len(results))
@@ -123,6 +136,7 @@ def train_regime(
     learning_rate: float = 1e-3,
     seed: int = 42,
     device: str = "cpu",
+    participation: list[list[str]] | None = None,
 ) -> RegimeResult:
     """Train under one regime and return the model each plant would use.
 
@@ -135,9 +149,14 @@ def train_regime(
 
     Only federated training moves model weights. Centralised training instead
     moves raw data, which ``hydrofed.experiments.communication`` accounts for.
+    ``participation`` limits each federated round to the plants that connect;
+    every plant still uses the final shared model.
     """
     if regime not in ALL_REGIMES:
         raise ValueError(f"regime must be one of {ALL_REGIMES}")
+    federated = regime in ("federated", "fedprox", "federated_finetune")
+    if participation is not None and not federated:
+        raise ValueError("participation only applies to federated regimes")
 
     start = time.perf_counter()
     options = dict(
@@ -145,10 +164,10 @@ def train_regime(
         learning_rate=learning_rate, seed=seed, device=device,
     )
 
-    if regime in ("federated", "fedprox", "federated_finetune"):
+    if federated:
         proximal_mu = FEDPROX_MU if regime == "fedprox" else 0.0
         model, history, round_bytes, uplink, downlink = run_fedavg(
-            plant_windows, **options, proximal_mu=proximal_mu,
+            plant_windows, **options, proximal_mu=proximal_mu, participation=participation,
         )
         models = dict.fromkeys(plant_windows, model)
         if regime == "federated_finetune":
