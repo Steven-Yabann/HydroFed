@@ -18,6 +18,11 @@ scenarios
     plants whose sensors differ, and plants with little training data. An
     unchanged baseline runs alongside for reference. Alert settings stay frozen.
 
+connectivity
+    Train federated with plants missing rounds: a random 4, 3 or 2 of the 5
+    plants per round, plant_4 and plant_5 joining only for the last rounds,
+    or never joining. Reported on final recordings with frozen alert settings.
+
 feedback
     Measure what alert reviews could teach the detector, on development
     recordings only: re-baselining after a resolved fault, a per-plant
@@ -47,6 +52,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from hydrofed.experiments.connectivity import AFFECTED_PLANTS, connectivity_scenarios
 from hydrofed.experiments.feedback import (
     alert_episodes,
     learned_threshold,
@@ -140,6 +146,7 @@ def autoencoder_job(job: dict) -> dict:
         job["regime"], plant_windows, lambda: build(n_features, job["config"]),
         rounds=job["rounds"], epochs=args.epochs, batch_size=args.batch_size,
         learning_rate=args.learning_rate, seed=job["seed"], device=args.device,
+        participation=job.get("participation"),
     )
     metrics, thresholds, group_metrics = {}, {}, {}
     for score in SCORES:
@@ -519,6 +526,65 @@ def run_scenarios(args) -> dict:
     }
 
 
+def run_connectivity(args) -> dict:
+    plants = sorted(path.stem for path in Path(args.partitions).glob("plant_*.npz"))
+    groups = {
+        "affected plants": list(AFFECTED_PLANTS),
+        "other plants": [plant for plant in plants if plant not in AFFECTED_PLANTS],
+    }
+    schedules = {seed: connectivity_scenarios(plants, args.rounds, seed) for seed in args.seeds}
+    names = list(schedules[args.seeds[0]])
+    jobs = [
+        {
+            "args": args, "label": name, "regime": "federated", "rounds": args.rounds, "seed": seed,
+            "architecture": "lstm", "config": lstm_config(args), "threshold": args.mad_multiplier,
+            "groups": groups, "participation": schedules[seed][name],
+        }
+        for name in names
+        for seed in args.seeds
+    ]
+    runs = run_jobs(jobs, args.jobs)
+
+    summary = {}
+    for name in names:
+        selected = [run for run in runs if run["label"] == name]
+        summary[name] = summarise(runs, name) | {
+            "groups": {
+                score: {
+                    group: {
+                        role: summarise_seeds([run["group_metrics"][score][group][role] for run in selected])
+                        for role in ROLES
+                    }
+                    for group in groups
+                }
+                for score in SCORES
+            },
+            "megabytes": float(np.mean([(run["uplink_bytes"] + run["downlink_bytes"]) / 1e6 for run in selected])),
+            "rounds_joined": {
+                plant: float(np.mean([sum(plant in round_ for round_ in schedules[seed][name]) for seed in args.seeds]))
+                for plant in plants
+            },
+        }
+
+    def auc(metrics):
+        value = metrics["macro_recording_auc_roc"]["mean"]
+        return f"{value:.3f}" if value is not None else "n/a"
+
+    print("\nFinal recordings, mean over seeds. AUC is within-recording AUC-ROC.")
+    print("| Scenario | MB moved | Full AUC | Model-only AUC | Affected plants: full AUC | Affected: model-only AUC "
+          "| Affected: recall / false alarms | Others: model-only AUC |")
+    print("|---" * 8 + "|")
+    for name in names:
+        entry, group = summary[name], summary[name]["groups"]
+        affected = group["hybrid"]["affected plants"]["final"]
+        print(f"| {name} | {entry['megabytes']:.1f} | {auc(entry['hybrid']['final'])} | {auc(entry['residual']['final'])} | "
+              f"{auc(affected)} | {auc(group['residual']['affected plants']['final'])} | "
+              f"{affected['recall']['mean']:.3f} / {affected['false_positive_rate']['mean']:.3f} | "
+              f"{auc(group['residual']['other plants']['final'])} |")
+    return {"groups": groups, "schedules": {str(seed): value for seed, value in schedules.items()},
+            "summary": summary, "runs": runs}
+
+
 FEEDBACK_METHODS = {
     "detector": "Current detector",
     "relearn": "Re-learn normal after a resolved fault",
@@ -687,6 +753,11 @@ def main() -> None:
     scenarios.add_argument("--mad-multiplier", type=float, default=24.0)
     scenarios.add_argument("--output", default="artifacts/comparison/scenarios.json")
 
+    connectivity = commands.add_parser("connectivity", help="plants that miss federated rounds")
+    add_common_arguments(connectivity)
+    connectivity.add_argument("--mad-multiplier", type=float, default=24.0)
+    connectivity.add_argument("--output", default="artifacts/comparison/connectivity.json")
+
     feedback = commands.add_parser("feedback", help="what alert reviews could teach the detector")
     add_common_arguments(feedback)
     feedback.add_argument("--mad-multiplier", type=float, default=24.0)
@@ -709,6 +780,7 @@ def main() -> None:
 
     commands_run = {
         "regimes": run_regimes, "models": run_models, "scenarios": run_scenarios, "feedback": run_feedback,
+        "connectivity": run_connectivity,
     }
     result = commands_run[args.command](args)
     result = {"config": vars(args)} | result
