@@ -13,6 +13,12 @@ models
     in each category is chosen on development recordings, and only the chosen
     models are reported on final recordings.
 
+thresholds
+    Train the federated LSTM autoencoder and report the hybrid detector on
+    development recordings at every candidate alert threshold, showing the
+    recall and false alarm trade-off behind the frozen 24 MAD setting. Final
+    recordings are not scored.
+
 scenarios
     Rerun the regime comparison where federated learning should matter:
     plants whose sensors differ, and plants with little training data. An
@@ -124,6 +130,8 @@ def autoencoder_job(job: dict) -> dict:
 
     With a fixed ``threshold`` every score uses it. Without one, each score's
     threshold is chosen on development recordings by the predeclared rule.
+    With ``sweep``, only development recordings are scored, once per candidate
+    threshold, and final recordings are not touched.
     """
     args = job["args"]
     torch.set_num_threads(job["threads"])
@@ -148,11 +156,19 @@ def autoencoder_job(job: dict) -> dict:
         learning_rate=args.learning_rate, seed=job["seed"], device=args.device,
         participation=job.get("participation"),
     )
-    metrics, thresholds, group_metrics = {}, {}, {}
-    for score in SCORES:
+    metrics, thresholds, group_metrics, sweeps = {}, {}, {}, {}
+    for score in job.get("scores", SCORES):
         scores = autoencoder_scores(
             recordings, result.models, score, args.smoothing, args.calibration_tail, args.device,
         )
+        if job.get("sweep"):
+            development = scores.select("dev")
+            sweeps[score] = [
+                {"threshold": float(threshold)}
+                | alert_metrics(development, float(threshold), args.persistence, sequence_seconds)
+                for threshold in job["sweep"]
+            ]
+            continue
         thresholds[score] = job.get("threshold")
         if thresholds[score] is None:
             thresholds[score] = choose_threshold(
@@ -184,6 +200,7 @@ def autoencoder_job(job: dict) -> dict:
         "uplink_bytes": result.uplink_bytes, "downlink_bytes": result.downlink_bytes,
         "seconds": result.seconds,
         "group_metrics": group_metrics,
+        "sweeps": sweeps,
         "training_windows": {plant: len(windows) for plant, windows in plant_windows.items()},
     }
 
@@ -434,6 +451,59 @@ def run_models(args) -> dict:
         "candidates": candidate_rows,
         "deep_runs": deep_runs,
         "classic_runs": classic_runs,
+    }
+
+
+SWEEP_THRESHOLDS = (4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 32, 40, 48, 64)
+FALSE_ALARM_BUDGETS = (0.10, 0.15, 0.20, 0.25, 0.30)
+
+
+def run_thresholds(args) -> dict:
+    """Sweep the alert threshold for the federated hybrid detector on development recordings."""
+    jobs = [
+        {
+            "args": args, "label": "federated", "regime": "federated", "rounds": args.rounds, "seed": seed,
+            "architecture": "lstm", "config": lstm_config(args), "scores": ("hybrid",),
+            "sweep": list(args.thresholds),
+        }
+        for seed in args.seeds
+    ]
+    runs = run_jobs(jobs, args.jobs)
+    by_threshold = [
+        {"threshold": float(threshold)} | summarise_seeds([
+            {name: value for name, value in run["sweeps"]["hybrid"][index].items() if name != "threshold"}
+            for run in runs
+        ])
+        for index, threshold in enumerate(args.thresholds)
+    ]
+
+    # The predeclared rule used for the model comparison, at several budgets:
+    # the highest mean recall whose mean false alarm rate fits the budget.
+    rule = {}
+    for budget in FALSE_ALARM_BUDGETS:
+        within = [row for row in by_threshold if row["false_positive_rate"]["mean"] <= budget]
+        best = max(within, key=lambda row: row["recall"]["mean"]) if within else None
+        rule[f"{budget:.2f}"] = best["threshold"] if best else None
+
+    print("\nHybrid detector, federated LSTM, development recordings (mean ± sd over seeds)")
+    print("| Threshold (MAD) | Recall | False alarm rate | Precision | Faults detected | Median delay (s) |")
+    print("|---|---|---|---|---|---|")
+    for row in by_threshold:
+        def cell(name, digits=3):
+            return f"{row[name]['mean']:.{digits}f} ± {row[name]['sd']:.{digits}f}" if row[name]["mean"] is not None else "n/a"
+        print(f"| {row['threshold']:g} | {cell('recall')} | {cell('false_positive_rate')} | {cell('precision')} | "
+              f"{row['fault_events_detected']['mean']:.1f}/{row['fault_events']['mean']:.0f} | "
+              f"{cell('median_detection_delay', 0)} |")
+    print("\nHighest-recall threshold within each false alarm budget:")
+    for budget, threshold in rule.items():
+        print(f"  false alarm rate <= {budget}: {threshold if threshold is not None else 'none'}")
+    return {
+        "role": "dev",
+        "score": "hybrid",
+        "regime": "federated",
+        "thresholds": by_threshold,
+        "highest_recall_within_budget": rule,
+        "runs": [{"seed": run["seed"], "sweep": run["sweeps"]["hybrid"], "seconds": run["seconds"]} for run in runs],
     }
 
 
@@ -753,15 +823,11 @@ def main() -> None:
     scenarios.add_argument("--mad-multiplier", type=float, default=24.0)
     scenarios.add_argument("--output", default="artifacts/comparison/scenarios.json")
 
-    connectivity = commands.add_parser("connectivity", help="plants that miss federated rounds")
-    add_common_arguments(connectivity)
-    connectivity.add_argument("--mad-multiplier", type=float, default=24.0)
-    connectivity.add_argument("--output", default="artifacts/comparison/connectivity.json")
-
-    feedback = commands.add_parser("feedback", help="what alert reviews could teach the detector")
-    add_common_arguments(feedback)
-    feedback.add_argument("--mad-multiplier", type=float, default=24.0)
-    feedback.add_argument("--output", default="artifacts/comparison/feedback.json")
+    sweep = commands.add_parser("thresholds", help="alert threshold sweep on development recordings")
+    add_common_arguments(sweep)
+    sweep.add_argument("--thresholds", type=float, nargs="+", default=list(SWEEP_THRESHOLDS),
+                       help="candidate thresholds in baseline MAD units")
+    sweep.add_argument("--output", default="artifacts/comparison/thresholds.json")
 
     publisher = commands.add_parser("publish", help="save existing JSON results for the dashboard")
     publisher.add_argument("--regimes", help="result of the regimes command")
@@ -779,8 +845,7 @@ def main() -> None:
         return
 
     commands_run = {
-        "regimes": run_regimes, "models": run_models, "scenarios": run_scenarios, "feedback": run_feedback,
-        "connectivity": run_connectivity,
+        "regimes": run_regimes, "models": run_models, "scenarios": run_scenarios, "thresholds": run_thresholds,
     }
     result = commands_run[args.command](args)
     result = {"config": vars(args)} | result

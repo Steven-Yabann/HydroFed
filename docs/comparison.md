@@ -21,6 +21,63 @@ About 54% of final test sequences are anomalous, so an always-on alarm scores
 F1 ≈ 0.70. Report recall, false alarm rate and within-recording AUC rather
 than F1 alone.
 
+## Alert threshold
+
+```bash
+.venv/bin/python scripts/run_comparison.py thresholds --jobs 3
+```
+
+The alert threshold is a multiple of the baseline's typical variation: the
+score is in baseline MAD units, so 24 means an alert when the smoothed score
+is 24 MADs above the median of recent normal behaviour. This command trains
+the federated LSTM autoencoder (20 rounds × 5 local epochs, seeds 42–44) and
+scores the hybrid detector on **development recordings only** at each
+candidate threshold. Final recordings are not scored. Results are saved to
+`artifacts/comparison/thresholds.json`; a run takes about 3 minutes with
+`--jobs 3`.
+
+| Threshold (MAD) | Recall | False alarm rate | Precision | Faults detected | Median delay |
+|---|---|---|---|---|---|
+| 4 | 0.964 ± 0.001 | 0.626 ± 0.013 | 0.653 ± 0.004 | 17.0/17 | 1 s |
+| 8 | 0.929 ± 0.004 | 0.475 ± 0.014 | 0.705 ± 0.005 | 17.0/17 | 8 s |
+| 12 | 0.899 ± 0.004 | 0.335 ± 0.017 | 0.767 ± 0.009 | 17.0/17 | 21 s |
+| 16 | 0.877 ± 0.004 | 0.221 ± 0.008 | 0.829 ± 0.005 | 17.0/17 | 34 s |
+| 18 | 0.865 ± 0.002 | 0.173 ± 0.006 | 0.859 ± 0.004 | 17.0/17 | 40 s |
+| 20 | 0.850 ± 0.007 | 0.146 ± 0.009 | 0.877 ± 0.008 | 17.0/17 | 40 s |
+| 22 | 0.834 ± 0.013 | 0.133 ± 0.014 | 0.884 ± 0.012 | 17.0/17 | 44 s |
+| **24** | **0.817 ± 0.013** | **0.123 ± 0.015** | **0.890 ± 0.014** | **16.7/17** | **50 s** |
+| 28 | 0.774 ± 0.006 | 0.102 ± 0.017 | 0.903 ± 0.015 | 16.3/17 | 49 s |
+| 32 | 0.700 ± 0.004 | 0.089 ± 0.014 | 0.906 ± 0.013 | 16.0/17 | 53 s |
+| 40 | 0.576 ± 0.001 | 0.072 ± 0.001 | 0.907 ± 0.001 | 14.0/17 | 58 s |
+| 48 | 0.531 ± 0.012 | 0.062 ± 0.008 | 0.913 ± 0.011 | 12.0/17 | 57 s |
+| 64 | 0.484 ± 0.007 | 0.020 ± 0.004 | 0.968 ± 0.006 | 10.7/17 | 58 s |
+
+The JSON also has 6, 10, 14 and 26.
+
+The curve has three regions:
+
+- **Below 16** false alarms climb steeply: at 8 almost half of normal windows
+  alarm, which an operator would learn to ignore.
+- **From 18 to 28** the trade-off is gentle. Each step of 2 MADs gives up
+  about 1.5–2.5 points of recall for 1–2.5 points fewer false alarms, and
+  nearly every fault is still caught.
+- **Above 32** whole faults start to go unnoticed (14/17 at 40, 11/17 at 64)
+  while false alarms barely fall.
+
+24 sits in the gentle region and meets a 15% false alarm budget. It is not
+the only defensible choice: the predeclared rule used for the model
+comparison (highest recall with at most 15% false alarms) picks 20 on these
+runs, which flags about 3 points more of the faulty windows for about 2 points
+more false alarms, and alerts 10 s sooner. 24 was frozen before this sweep was
+recorded and every final result uses it, so it stays; switching now would
+mean choosing a threshold after seeing final results.
+
+The false alarm rate does not carry over from development to final
+recordings: at 24 it is 0.123 on development recordings and 0.235 on final
+ones (next section). Thresholds calibrated on a short baseline understate how
+far a plant drifts later, which is why a real deployment would need a
+baseline that keeps adapting.
+
 ## Federated, centralised and isolated training
 
 ```bash
