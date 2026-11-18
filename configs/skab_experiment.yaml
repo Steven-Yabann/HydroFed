@@ -1,22 +1,36 @@
-seed: 42
+# Settings behind the reported SKAB results. No script reads this file:
+# scripts/run_comparison.py uses these values as its defaults, and
+# tests/test_config.py checks that the two stay the same.
+
+seeds: [42, 43, 44]
 
 data:
-  partitions: data/partitions
+  partitions: data/partitions_skab
   partition_strategy: temporal
+  window: 10
+  stride: 1
+  minimum_anomalies: 100
+  baseline_seconds: 400
+  scaling: plant
 
 model:
   hidden_size: 64
-  latent_size: 16
+  latent_size: 4
   num_layers: 2
   dropout: 0.1
 
 training:
-  local_epochs: 1
+  local_epochs: 5
   batch_size: 64
+  learning_rate: 0.001
 
 federation:
-  rounds: 2
+  rounds: 20
   fraction_fit: 1.0
 
-evaluation:
-  threshold_percentile: 95.0
+alerts:
+  score: hybrid
+  smoothing: 0.2
+  calibration_tail: 0.25
+  mad_multiplier: 24.0
+  persistence: 1

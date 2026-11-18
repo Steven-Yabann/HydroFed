@@ -25,8 +25,13 @@ partition-synthetic:
 	$(PYTHON) scripts/prepare_data.py --synthetic --output data/partitions
 baseline:
 	$(PYTHON) scripts/run_baseline.py
+# Flower simulation with the reported settings (20 rounds x 5 epochs, latent 4,
+# hybrid alert policy). Needs make partition-skab first.
 federated:
-	$(PYTHON) scripts/run_experiment.py
+	$(PYTHON) scripts/run_experiment.py --partitions data/partitions_skab --seed 42 \
+		--evaluate --evaluation-protocol skab --skab-training-policy normal-only \
+		--skab-scaling plant --skab-score hybrid --skab-exclude-anomaly-free \
+		--skab-persistence 1
 evaluate:
 	$(PYTHON) scripts/evaluate_model.py artifacts/baselines/plant_1.pt data/partitions/plant_1.npz
 monitor-up:

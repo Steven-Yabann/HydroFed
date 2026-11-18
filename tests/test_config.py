@@ -41,3 +41,30 @@ def test_set_random_seed_repeats_python_numpy_and_torch_values():
     assert random.random() == first_python
     assert np.random.random() == first_numpy
     assert torch.equal(torch.rand(3), first_torch)
+
+def test_reported_settings_match_the_comparison_defaults():
+    import argparse
+    import importlib.util
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("run_comparison", root / "scripts" / "run_comparison.py")
+    run_comparison = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(run_comparison)
+    parser = argparse.ArgumentParser()
+    run_comparison.add_common_arguments(parser)
+    defaults = vars(parser.parse_args([]))
+
+    config = load_experiment_config(root / "configs" / "skab_experiment.yaml")
+
+    assert defaults["seeds"] == config["seeds"]
+    assert defaults["partitions"] == config["data"]["partitions"]
+    assert defaults["scaling"] == config["data"]["scaling"]
+    for name in ("hidden_size", "latent_size", "num_layers", "dropout"):
+        assert defaults[name] == config["model"][name]
+    assert defaults["epochs"] == config["training"]["local_epochs"]
+    assert defaults["batch_size"] == config["training"]["batch_size"]
+    assert defaults["learning_rate"] == config["training"]["learning_rate"]
+    assert defaults["rounds"] == config["federation"]["rounds"]
+    for name in ("smoothing", "calibration_tail", "persistence"):
+        assert defaults[name] == config["alerts"][name]
