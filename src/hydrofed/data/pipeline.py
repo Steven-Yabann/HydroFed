@@ -11,7 +11,14 @@ import requests
 
 LABEL_NAMES = ("anomaly", "changepoint")
 
-SKAB_ARCHIVE_URL = "https://github.com/waico/SKAB/archive/refs/heads/master.zip"
+# The SKAB commit every reported result was produced from. Its CSVs match the
+# master branch as downloaded for the experiments.
+SKAB_COMMIT = "b2c0d46c2971dcbfe71e26087b6d231998bb91c2"
+SKAB_ARCHIVE_URL = f"https://github.com/waico/SKAB/archive/{SKAB_COMMIT}.zip"
+# The archive unpacks to SKAB-<commit>/. It is renamed to the folder the
+# master-branch archive used, so recording IDs such as
+# SKAB-master/data/valve1/13.csv match earlier partitions and published results.
+SKAB_FOLDER = "SKAB-master"
 
 def download_skab(destination: str | Path, url: str = SKAB_ARCHIVE_URL) -> Path:
     """Download SKAB when ``destination`` does not already contain CSV files."""
@@ -27,6 +34,9 @@ def download_skab(destination: str | Path, url: str = SKAB_ARCHIVE_URL) -> Path:
             if root not in target.parents and target != root:
                 raise ValueError("Unsafe path in SKAB archive")
         archive.extractall(destination)
+    unpacked = destination / f"SKAB-{SKAB_COMMIT}"
+    if unpacked.is_dir():
+        unpacked.rename(destination / SKAB_FOLDER)
     return destination
 
 def load_skab_csvs(path: str | Path) -> pd.DataFrame:

@@ -31,6 +31,22 @@ def test_download_skab_reuses_existing_csv(tmp_path, monkeypatch):
     monkeypatch.setattr("hydrofed.data.pipeline.requests.get", unexpected_request)
     assert download_skab(dataset)==dataset
 
+def test_download_skab_fetches_the_pinned_commit_into_the_usual_folder(tmp_path, monkeypatch):
+    import io, zipfile
+    archive=io.BytesIO()
+    with zipfile.ZipFile(archive,"w") as zipped:
+        zipped.writestr(f"SKAB-{SKAB_COMMIT}/data/valve1/13.csv","sensor;anomaly\n1;0\n")
+    requested=[]
+    class Response:
+        content=archive.getvalue()
+        def raise_for_status(self): pass
+    def fake_get(url, **kwargs):
+        requested.append(url); return Response()
+    monkeypatch.setattr("hydrofed.data.pipeline.requests.get", fake_get)
+    download_skab(tmp_path/"SKAB")
+    assert requested==[f"https://github.com/waico/SKAB/archive/{SKAB_COMMIT}.zip"]
+    assert (tmp_path/"SKAB"/"SKAB-master"/"data"/"valve1"/"13.csv").exists()
+
 def test_temporal_partition_keeps_window_order_per_plant():
     windows = np.arange(10 * 2, dtype=np.float32).reshape(10, 2, 1)
     labels = np.arange(10, dtype=np.int64)
