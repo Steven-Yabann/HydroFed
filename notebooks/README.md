@@ -27,6 +27,18 @@ What it ran:
 Seed naming: cells 24 and 25 ran seed 44 but saved to `temporal_seed43.db` and
 `iid_seed43.db`. Each of those files therefore holds two federated runs, one
 with seed 43 and one with seed 44, as cell 26's output shows. Read the seed
-from each run's `config_json`, not from the file name.
+from each run's `config_json`, not from the file name. The same cells wrote to
+`temporal_seed43_global.pt` and `iid_seed43_global.pt`, so those checkpoints
+hold the seed-44 models; the seed-43 global models were overwritten. Their
+metrics remain in the databases.
 
-The Drive outputs are attached to the GitHub release.
+The checkpoints save an empty `model_config`, so they load with the LSTM's
+class defaults (hidden size 64, latent size 16, 2 layers).
+
+In the `ablation/` databases, three isolated-baseline runs are marked
+completed but have no evaluation rows. `temporal_seed42.db` and
+`iid_seed42.db` each also hold one baseline run with evaluation results; use
+that one.
+
+The `ablation/` outputs are attached to the GitHub release as
+`colab_ablation_outputs.zip`.
