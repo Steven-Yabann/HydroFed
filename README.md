@@ -46,8 +46,9 @@ request.
 make partition-skab
 ```
 
-This downloads SKAB into `data/SKAB` when no CSVs are there, then writes the
-five plant partitions to `data/partitions_skab`. Existing CSVs are reused.
+This downloads SKAB at commit `b2c0d46` (the version every result used) into
+`data/SKAB` when no CSVs are there, then writes the five plant partitions to
+`data/partitions_skab`. Existing CSVs are reused.
 
 ## Reproducing the results
 
@@ -73,9 +74,11 @@ the GitHub release.
 
 `scripts/run_experiment.py` runs the same model as a Flower simulation with
 `TrackingFedAvg`, which records each client's loss and the uplink and downlink
-bytes per round. The command for the reported configuration is in
-[docs/skab-diagnostics.md](docs/skab-diagnostics.md#hybrid-recording-baseline-experiment).
-The script's own defaults (two rounds, one epoch) are for a quick check only.
+bytes per round. `make federated` runs it with the reported settings (seed 42,
+20 rounds of 5 local epochs, latent size 4 and the hybrid alert policy).
+[docs/skab-diagnostics.md](docs/skab-diagnostics.md#hybrid-recording-baseline-experiment)
+explains the flags. `configs/skab_experiment.yaml` lists the reported settings
+in one place.
 
 ## Dashboard
 
