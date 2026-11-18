@@ -250,8 +250,12 @@ Plain FedAvg trails centralised and isolated training on the model's own
 scratch experiment, then the two that helped were added as regimes:
 
 ```bash
-.venv/bin/python scripts/run_comparison.py scenarios --regimes fedprox federated_finetune --jobs 5
+.venv/bin/python scripts/run_comparison.py scenarios --regimes fedprox federated_finetune --jobs 5 \
+  --output artifacts/comparison/personalised.json
 ```
+
+Without `--output`, this would overwrite the scenario results in
+`artifacts/comparison/scenarios.json`.
 
 - **fedprox**: FedAvg with FedProx's proximal term, μ = 0.1, which keeps each
   plant's update near the round's global model.
