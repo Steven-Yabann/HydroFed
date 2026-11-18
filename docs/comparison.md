@@ -300,8 +300,17 @@ every scenario, so neither changes the headline detection rate.
 
 Server-side validation sets and reputation systems were not screened. They
 defend against unreliable or malicious clients, and a validation set would
-put plant data on the server, against HydroFed's privacy aim. The screening
-script and its results are kept in `artifacts/comparison/strategy-screen/`.
+put plant data on the server, against HydroFed's privacy aim.
+
+The screen was run with:
+
+```bash
+.venv/bin/python scripts/screen_fl_strategies.py --jobs 4 \
+  --output artifacts/comparison/fl_strategy_screen.json
+.venv/bin/python scripts/report_fl_strategy_screen.py artifacts/comparison/fl_strategy_screen.json
+```
+
+Its result file is attached to the GitHub release.
 
 ## Learning from alert reviews
 
