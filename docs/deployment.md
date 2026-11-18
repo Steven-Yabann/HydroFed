@@ -80,7 +80,7 @@ Render deploys HydroFed as two separate services.
 ```text
 Service name: HydroFed
 Runtime: Docker
-Branch: feature/deployment
+Branch: main
 Docker build context: .
 Dockerfile path: Dockerfile.api
 Health check path: /api/health
@@ -130,7 +130,7 @@ https://hydrofed.onrender.com/api/health
 
 ```text
 Service name: hydrofed-dashboard
-Branch: feature/deployment
+Branch: main
 Root directory: frontend
 Build command: npm ci && npm run build
 Publish directory: dist
@@ -154,14 +154,14 @@ https://hydrofed-dashboard.onrender.com
 
 ### Releasing
 
-Both services build from `feature/deployment`. After a change is merged to
-`main`, release it by moving that branch to `main`:
+Both services build from `main`. Changes are merged into `main` through pull
+requests, and GitHub Actions runs the tests and the frontend build on each one.
+With auto-deploy on, Render rebuilds both services when a pull request is
+merged.
 
-```bash
-git push origin main:feature/deployment
-```
-
-Render then rebuilds both services.
+Versions used for reported results are tagged (for example `v1.0.0`). Each
+tag's GitHub release carries the comparison result files from
+`artifacts/comparison/`, which are git-ignored.
 
 ## Importing experiment history
 
