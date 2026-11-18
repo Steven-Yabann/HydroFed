@@ -1,67 +1,102 @@
 # HydroFed
 
-HydroFed is a local Python 3.11 research system for privacy-preserving anomaly detection on hydropower-style telemetry. Each simulated plant keeps its windows local, trains an LSTM autoencoder, and either remains an isolated baseline or participates in Flower FedAvg.
+HydroFed is a research prototype for privacy-preserving anomaly detection on
+hydropower-style telemetry. Five simulated plants, built from the Skoltech
+Anomaly Benchmark (SKAB), each keep their data local and train an LSTM
+autoencoder together with federated averaging (FedAvg). Detected anomalies are
+turned into alerts and shown on a role-based dashboard.
+
+## Pipeline
 
 ```text
-SKAB CSVs / synthetic telemetry
-  → fill missing values → min-max scale → sliding windows
-  → five non-IID plant NPZ files
-  → isolated LSTM baselines OR Flower FedAvg
-  → reconstruction scores and calibrated threshold
-  → precision / recall / F1 / AUC-ROC
-  → SQLite + Prometheus + Grafana
+SKAB CSVs (35 recordings, 8 sensors, 1 Hz)
+  → clean each recording (fill gaps within the recording only)
+  → 10-second windows, stride 1, never crossing a recording boundary
+  → split whole recordings across five plants (each with ≥ 100 anomalous windows)
+  → alternate each plant's recordings into development and final roles
+  → first 400 s of each recording = fault-free baseline, the rest = test
+  → per-plant standard scaler fitted on that plant's normal baseline windows
+  → train the LSTM autoencoder: federated (FedAvg), centralised or isolated
+  → hybrid score: per-sensor distance from the recording's baseline plus the
+    model's residual, smoothed, with a per-recording threshold
+    (median + 24 MAD of the baseline tail)
+  → recall, false alarm rate, within-recording AUC-ROC, faults detected, delay
+  → JSON results and SQLite → FastAPI → React dashboard
 ```
+
+Settings are chosen on development recordings. Final recordings are used only
+for reporting.
 
 ## Setup and tests
 
-```bash
-make setup
-make test
-```
-
-The model accepts `(batch_size, window_length, n_features)` tensors and reconstructs the same shape. An anomaly score is the mean squared reconstruction error for one complete window.
-
-## Fast offline synthetic demo
+Requires Python 3.11 and, for the dashboard, Node.js 22.12 or newer.
 
 ```bash
-make partition-synthetic
-make baseline
-make evaluate
+make setup                                # .venv with the pinned dependencies
+.venv/bin/pip install -e ".[experiments]" # XGBoost, for the model comparison
+make test                                 # pytest; needs no data files
 ```
 
-For a faster rehearsal:
+GitHub Actions runs the same tests and the frontend build on every pull
+request.
+
+## Data
 
 ```bash
-.venv/bin/python scripts/prepare_data.py --synthetic --rows 300 --features 4 --window 16 --stride 4 --clients 5 --output /tmp/hydrofed-demo
-.venv/bin/python scripts/run_baseline.py --partitions /tmp/hydrofed-demo --output /tmp/hydrofed-models --epochs 1 --db /tmp/hydrofed.db
+make partition-skab
 ```
 
-## SKAB demo
+This downloads SKAB into `data/SKAB` when no CSVs are there, then writes the
+five plant partitions to `data/partitions_skab`. Existing CSVs are reused.
 
-Run `make partition`: it downloads SKAB into `data/SKAB` when no CSVs exist, then creates the client partitions. Existing CSVs are reused, so later runs do not download the dataset again. You can also clone `https://github.com/waico/SKAB` into `data/SKAB` yourself. The synthetic generator provides an offline fallback with SKAB-shaped numeric sensors plus an `anomaly` column.
+## Reproducing the results
 
-## Federated experiment
+Every comparison uses seeds 42, 43 and 44, 20 rounds of 5 local epochs, and
+the frozen alert policy. Results are written to `artifacts/comparison/`.
 
-Flower simulation uses the Ray runtime included by `make setup`. Run `make federated`.
+| Experiment | Command | Output |
+| --- | --- | --- |
+| Federated, centralised and isolated training | `.venv/bin/python scripts/run_comparison.py regimes --jobs 3` | `regimes.json` |
+| LSTM against transformer and classic models | `.venv/bin/python scripts/run_comparison.py models --jobs 3` | `models.json` |
+| Heterogeneous and data-scarce plants | `.venv/bin/python scripts/run_comparison.py scenarios --jobs 3` | `scenarios.json` |
+| FedProx and fine-tuned federated training | `.venv/bin/python scripts/run_comparison.py scenarios --regimes fedprox federated_finetune --jobs 5 --output artifacts/comparison/personalised.json` | `personalised.json` |
+| Plants that miss federated rounds | `.venv/bin/python scripts/run_comparison.py connectivity --jobs 6` | `connectivity.json` |
+| Learning from alert reviews (development only) | `.venv/bin/python scripts/run_comparison.py feedback --jobs 3` | `feedback.json` |
 
-The default is two rounds and five clients. Use `scripts/run_experiment.py --rounds 1 --epochs 1` for a reduced run. Client/round losses and approximate NumPy tensor uplink/downlink bytes are written to `artifacts/experiments.db`.
+These comparisons run federated training in-process with the same
+example-weighted FedAvg as Flower's strategy, because a Ray simulation per seed
+is slow. [docs/comparison.md](docs/comparison.md) explains each experiment and
+records its results. The result files from the reported runs are attached to
+the GitHub release.
 
-## Evaluation
+### Flower simulation
 
-`make evaluate` evaluates `plant_1` using its saved threshold. Thresholds are the 95th percentile of reconstruction errors on held-out normal windows. AUC-ROC uses continuous scores; precision, recall, and F1 use the threshold.
-
-[docs/comparison.md](docs/comparison.md) explains how to rerun the SKAB comparisons and gives their results: federated against centralised and isolated training, and the LSTM against transformer and classic models.
+`scripts/run_experiment.py` runs the same model as a Flower simulation with
+`TrackingFedAvg`, which records each client's loss and the uplink and downlink
+bytes per round. The command for the reported configuration is in
+[docs/skab-diagnostics.md](docs/skab-diagnostics.md#hybrid-recording-baseline-experiment).
+The script's own defaults (two rounds, one epoch) are for a quick check only.
 
 ## Dashboard
 
 The React dashboard (`frontend/`) is for two roles:
 
-- **Plant operators** watch the fleet's live anomaly scores, open a plant's score and sensor trends, and review alerts (acknowledge, investigate, resolve or mark a false alarm).
-- **System administrators** can do all of that, and also configure and start federated training, pause or rename plant nodes, and add users.
+- **Plant operators** watch the fleet's live anomaly scores, open a plant's
+  score and sensor trends, and review alerts (acknowledge, investigate,
+  resolve or mark a false alarm).
+- **System administrators** can do all of that, and also configure and start
+  federated training, pause or rename plant nodes, and add users.
 
-Both roles can open **Model performance**, which compares federated, centralised and isolated training, the LSTM, transformer and classical model families, and communication overhead, using the results in `artifacts/comparison`.
+Both roles can open **Model performance**, which compares federated,
+centralised and isolated training, the model families, and communication
+overhead.
 
-There is no live plant, so `make operator-feed` scores every SKAB recording (baseline and test region) with the saved federated LSTM checkpoint and the frozen alert policy. The API replays those scores second by second as if they were streaming in.
+There is no live plant, so `make operator-feed` scores every SKAB recording
+with the saved federated LSTM checkpoint and the frozen alert policy. The API
+replays those scores second by second as if they were streaming in.
+
+The API reads its settings from environment variables, listed with their
+local defaults in `.env.example`.
 
 ```bash
 make operator-feed                                      # writes artifacts/operator/
@@ -74,19 +109,57 @@ make dashboard                                          # Vite on :5173
 
 ### Sign-in
 
-Only accounts an administrator has created can sign in, by password or single sign-on. Google and Microsoft sign-in use the OpenID Connect code flow with PKCE, and the provider's email must match an existing account. To enable a provider, register the redirect URI `<HYDROFED_PUBLIC_API_URL>/api/auth/oauth/google/callback` (or `.../microsoft/callback`) and set its client ID and secret on the API (see `.env.example`). Buttons for unconfigured providers appear greyed out in development and are hidden in production builds.
+Only accounts an administrator has created can sign in, by password or single
+sign-on. Google and Microsoft sign-in use the OpenID Connect code flow with
+PKCE, and the provider's email must match an existing account. To enable a
+provider, register the redirect URI
+`<HYDROFED_PUBLIC_API_URL>/api/auth/oauth/google/callback` (or
+`.../microsoft/callback`) and set its client ID and secret on the API (see
+`.env.example`).
 
-Set `HYDROFED_SECRET_KEY` in any shared deployment. Without it, the API keeps a random signing key beside the database.
+Set `HYDROFED_SECRET_KEY` in any shared deployment. Without it, the API keeps a
+random signing key beside the database.
+
+## Deployment
+
+The dashboard and API are deployed on Render from the `main` branch. The API
+image is built from `Dockerfile.api` and serves the published results in
+`deploy/published/`, which `make publish` copies from `artifacts/`. Training
+is switched off in the hosted API. To run the same stack locally:
+
+```bash
+cp deployment.env.example deployment.env
+docker compose --env-file deployment.env -f docker-compose.deploy.yml up --build
+```
+
+See [docs/deployment.md](docs/deployment.md) for the Render settings.
 
 ## Monitoring
 
-Start a process which imports `hydrofed.monitoring` and calls `serve(8000)`, then run `make monitor-up`. Prometheus is at port 9090 and Grafana at port 3000. Run `make monitor-down` afterward. The dashboard covers losses, anomaly score, communication bytes, and F1; no cloud deployment is included.
+`scripts/run_experiment.py` exports Prometheus metrics on port 8000 while it
+trains (`--metrics-port`; `--keep-metrics-seconds` keeps them up afterwards).
+Run `make monitor-up` to start Prometheus on port 9090 and Grafana on port
+3000. Prometheus scrapes port 8000, so don't run the API on that port at the
+same time. The Grafana dashboard shows training losses, communication bytes,
+anomaly scores and F1. Run `make monitor-down` afterward.
 
 ## Generated files
 
-- `data/partitions/plant_1.npz` … `plant_5.npz`: window and label arrays
-- `data/partitions/partition_summary.json`: counts and anomaly prevalence
-- `artifacts/baselines/*.pt`: weights, feature count, and calibrated threshold
-- `artifacts/experiments.db`: evaluation and federation metadata
+These are git-ignored:
 
-Source modules live under `src/hydrofed`; commands under `scripts`; tests under `tests`; presentation planning under `.context/planning`. Generated data and model files should normally remain uncommitted.
+- `data/SKAB/`: the downloaded SKAB recordings
+- `data/partitions_skab/plant_1.npz` … `plant_5.npz`: each plant's windows,
+  labels and recording metadata, unscaled
+- `artifacts/comparison/*.json`: comparison results
+- `artifacts/operator/`: the replay feed for the dashboard
+- `artifacts/experiments.db`: runs, results, users, plant nodes and alert
+  reviews
+
+## Layout
+
+Source modules live under `src/hydrofed`, commands under `scripts`, and tests
+under `tests`.
+
+## License
+
+[MIT](LICENSE)
