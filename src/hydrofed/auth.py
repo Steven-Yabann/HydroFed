@@ -52,12 +52,14 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login_at TEXT,
     created_by INTEGER,
-    plant_id TEXT
+    plant_id TEXT,
+    notify_messages INTEGER NOT NULL DEFAULT 1
 );
 """
 
 USER_COLUMNS = (
-    "user_id, email, name, role, status, last_provider, created_at, last_login_at, plant_id, password_hash"
+    "user_id, email, name, role, status, last_provider, created_at, last_login_at, plant_id, notify_messages, "
+    "password_hash"
 )
 
 
@@ -80,6 +82,7 @@ def verify_password(password: str, password_hash: str | None) -> bool:
 def _public(row: tuple) -> dict:
     user = dict(zip(USER_COLUMNS.split(", "), row))
     user["has_password"] = bool(user.pop("password_hash"))
+    user["notify_messages"] = bool(user["notify_messages"])
     user["permissions"] = list(ROLE_PERMISSIONS.get(user["role"], ()))
     user["role_label"] = ROLE_LABELS.get(user["role"], user["role"])
     if "view_all_plants" in user["permissions"]:
@@ -105,6 +108,8 @@ class UserStore:
             columns = {row[1] for row in database.execute("PRAGMA table_info(users)")}
             if "plant_id" not in columns:
                 database.execute("ALTER TABLE users ADD COLUMN plant_id TEXT")
+            if "notify_messages" not in columns:
+                database.execute("ALTER TABLE users ADD COLUMN notify_messages INTEGER NOT NULL DEFAULT 1")
 
     def _query(self, sql: str, parameters: tuple = ()) -> list[tuple]:
         with sqlite3.connect(self.path) as database:
@@ -160,6 +165,7 @@ class UserStore:
         status: str | None = None,
         password: str | None = None,
         plant_id: str | None = None,
+        notify_messages: bool | None = None,
     ) -> dict:
         """Change an account. ``plant_id=""`` removes its plant assignment."""
         user = self.get(user_id)
@@ -184,6 +190,8 @@ class UserStore:
         changes = {column: value for column, value in changes.items() if value is not None}
         if plant_id is not None:
             changes["plant_id"] = plant_id or None
+        if notify_messages is not None:
+            changes["notify_messages"] = int(bool(notify_messages))
         if changes:
             assignments = ", ".join(f"{column} = ?" for column in changes)
             with sqlite3.connect(self.path) as database:

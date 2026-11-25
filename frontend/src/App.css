@@ -2610,3 +2610,20 @@ thead .cell-note {
     max-width: 92%;
   }
 }
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.setting-row > span {
+  display: grid;
+  gap: 2px;
+}
+
+.setting-row small {
+  color: var(--ink-muted);
+  font-size: 13px;
+}

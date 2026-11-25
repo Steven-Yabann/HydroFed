@@ -178,6 +178,42 @@ The API health endpoint is:
 https://hydrofed.onrender.com/api/health
 ```
 
+### Email notifications for messages
+
+The API can email people when a plant conversation has something new for
+them. A message from an operator goes to every administrator; a message from
+an administrator goes to that plant's operator. Each person gets one email per
+conversation and none after it until they read the conversation. Anyone can
+turn the emails off under **Your account**.
+
+Add these to the **HydroFed** API service and redeploy. Choose one way to send.
+
+**Gmail over SMTP.** Render blocks SMTP ports on free instances only, and the
+API service is on a paid instance because it has a disk. Turn on 2-Step
+Verification for the Google account, create an app password at
+<https://myaccount.google.com/apppasswords>, then set:
+
+```text
+HYDROFED_EMAIL_FROM=HydroFed <your.address@gmail.com>
+HYDROFED_SMTP_HOST=smtp.gmail.com
+HYDROFED_SMTP_PORT=587
+HYDROFED_SMTP_USERNAME=your.address@gmail.com
+HYDROFED_SMTP_PASSWORD=the 16-letter app password
+```
+
+**Brevo over HTTPS.** Use this if SMTP is blocked. Create a free Brevo
+account, verify the sender address under **Senders, domains and dedicated
+IPs**, create an API key under **SMTP and API**, then set:
+
+```text
+HYDROFED_EMAIL_FROM=HydroFed <your.address@gmail.com>
+HYDROFED_BREVO_API_KEY=the API key
+```
+
+If both are set, Brevo is used. The links in the emails use
+`HYDROFED_FRONTEND_URL`, so it must be the dashboard's public address. A
+failed email is logged and never stops the message itself.
+
 ### Frontend static site
 
 ```text
@@ -254,7 +290,9 @@ After a release, confirm that:
    only **My plant**, **Alerts** and **Messages**, all limited to that plant.
 6. A message the operator sends appears, unread, in the administrator's
    **Messages**, and the reply reaches the operator.
-7. An alert review and the messages survive a restart of the API service.
+7. With email set up, that first operator message emails the administrators,
+   with a link that opens the conversation.
+8. An alert review and the messages survive a restart of the API service.
 
 ## Current limitations
 
