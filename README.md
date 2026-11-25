@@ -127,8 +127,11 @@ random signing key beside the database.
 
 The dashboard and API are deployed on Render from the `main` branch. The API
 image is built from `Dockerfile.api` and serves the published results in
-`deploy/published/`, which `make publish` copies from `artifacts/`. Training
-is switched off in the hosted API. To run the same stack locally:
+`deploy/published/`, which `make publish` copies from `artifacts/`. The
+hosted API does not train itself: **Start on GitHub Actions** on the Federated
+training page runs the `Federated training` workflow, which reports the run
+back to the API (setup in [docs/deployment.md](docs/deployment.md)). To run
+the same stack locally:
 
 ```bash
 cp deployment.env.example deployment.env

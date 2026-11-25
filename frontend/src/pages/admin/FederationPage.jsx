@@ -38,6 +38,40 @@ const groups = [
   },
 ]
 
+const activeStates = ['queued', 'running']
+const jobTones = { queued: 'info', running: 'info', completed: 'normal', failed: 'critical', cancelled: 'muted' }
+const backends = {
+  github: {
+    subtitle: 'Runs on GitHub Actions: it downloads SKAB, builds each plant\'s partition and trains with the saved settings. Results appear under Recent federated runs when it finishes.',
+    start: 'Start on GitHub Actions',
+  },
+  local: {
+    subtitle: 'Starts a Flower simulation on this server with the saved settings. Each plant trains on its own partition.',
+    start: 'Start training run',
+  },
+}
+
+function StepList({ steps }) {
+  if (!steps?.length) return null
+  return (
+    <ol className="job-steps" aria-label="Workflow steps">
+      {steps.map((step) => {
+        const done = step.status === 'completed'
+        const failed = done && !['success', 'skipped'].includes(step.conclusion)
+        const icon = failed ? 'alert' : done ? 'check' : step.status === 'in_progress' ? 'clock' : 'info'
+        const label = failed ? step.conclusion : done ? 'done' : step.status === 'in_progress' ? 'running' : 'waiting'
+        return (
+          <li key={step.name} className={failed ? 'failed' : done ? 'done' : step.status === 'in_progress' ? 'current' : ''}>
+            <Icon name={icon} size={14} />
+            <span>{step.name}</span>
+            <small>{label}</small>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
 // Trainable parameters of the LSTM autoencoder (matches PyTorch's count).
 function lstmParameters({ hidden_size: h, latent_size: latent, num_layers: layers }, features = 8) {
   const lstm = (input) => 4 * h * (input + h) + 8 * h
@@ -53,7 +87,8 @@ function TrainingPanel({ training, participating, config, onChange }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const job = training?.job
-  const running = job?.state === 'running'
+  const running = activeStates.includes(job?.state)
+  const backend = backends[training?.backend] || backends.local
 
   const act = async (method) => {
     setBusy(true)
@@ -73,8 +108,8 @@ function TrainingPanel({ training, participating, config, onChange }) {
   return (
     <Card
       title="Run federated training"
-      subtitle="Starts a Flower simulation with the saved settings. Each plant trains on its own partition."
-      actions={job && <Badge tone={running ? 'info' : job.state === 'completed' ? 'normal' : 'critical'} icon={running ? 'clock' : undefined}>{job.state}</Badge>}
+      subtitle={backend.subtitle}
+      actions={job && <Badge tone={jobTones[job.state] || 'info'} icon={running ? 'clock' : undefined}>{job.state}</Badge>}
     >
       {!training?.available && <Notice tone="warning" title="Training is unavailable here">{training?.reason}</Notice>}
       {error && <Notice tone="critical">{error}</Notice>}
@@ -88,7 +123,7 @@ function TrainingPanel({ training, participating, config, onChange }) {
 
       <div className="button-row">
         <Button variant="primary" icon="play" disabled={busy || running || !training?.available} onClick={() => act('POST')}>
-          Start training run
+          {backend.start}
         </Button>
         {running && <Button variant="danger" icon="stop" disabled={busy} onClick={() => act('DELETE')}>Stop run</Button>}
       </div>
@@ -97,7 +132,11 @@ function TrainingPanel({ training, participating, config, onChange }) {
         <div className="job">
           <p className="muted small">
             Started {dateTime(job.started_at)} by {job.started_by} · plants {job.clients.join(', ')}
+            {job.url && <> · <a href={job.url} target="_blank" rel="noreferrer">View the run on GitHub</a></>}
           </p>
+          {job.state === 'queued' && !job.url && <p className="muted small">Waiting for GitHub to start the run…</p>}
+          {job.error && <Notice tone="critical">{job.error}</Notice>}
+          <StepList steps={job.steps} />
           {job.log_tail?.length > 0 && (
             <pre className="log" aria-label="Training log">{job.log_tail.join('\n')}</pre>
           )}
@@ -110,7 +149,8 @@ function TrainingPanel({ training, participating, config, onChange }) {
 export default function FederationPage() {
   const settings = useApi('/api/admin/federation')
   const nodes = useApi('/api/admin/nodes')
-  const running = settings.data?.training?.job?.state === 'running'
+  const jobState = settings.data?.training?.job?.state
+  const running = activeStates.includes(jobState)
   const runs = useApi('/api/runs?experiment=federated&limit=10', { interval: running ? 5000 : 0 })
   const trainingPoll = useApi('/api/admin/training', { interval: running ? 4000 : 0, enabled: running })
   const [form, setForm] = useState(null)
@@ -125,6 +165,12 @@ export default function FederationPage() {
     if (trainingPoll.data && settings.data) settings.setData({ ...settings.data, training: trainingPoll.data })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trainingPoll.data])
+
+  // A finished run has just been saved, so refresh the table below.
+  useEffect(() => {
+    if (jobState && !activeStates.includes(jobState)) runs.reload({ quiet: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobState])
 
   const dirty = useMemo(
     () => form && settings.data && Object.keys(form).some((key) => String(form[key]) !== String(settings.data.config[key])),

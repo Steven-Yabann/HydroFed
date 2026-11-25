@@ -115,10 +115,62 @@ HYDROFED_MICROSOFT_CLIENT_ID / HYDROFED_MICROSOFT_CLIENT_SECRET
   https://hydrofed.onrender.com/api/auth/oauth/microsoft/callback
 ```
 
-Training from the dashboard is switched off in the image
-(`HYDROFED_ALLOW_TRAINING=0`): it has no training data and a web service is
-the wrong place for long simulations. Administrators can still change the
-federation settings and plant nodes.
+The image cannot train by itself (`HYDROFED_ALLOW_TRAINING=0`): it has no
+training data and a web service is the wrong place for long simulations.
+Training runs on GitHub Actions instead, once it is set up (next section).
+Without it, administrators can still change the federation settings and plant
+nodes.
+
+### Federated training on GitHub Actions
+
+**Start on GitHub Actions** on the **Federated training** page dispatches the
+`Federated training` workflow (`.github/workflows/federated-training.yml`)
+with the saved settings and the participating plants. The workflow installs
+the CPU build of PyTorch, downloads SKAB at the pinned commit, builds the
+plant partitions, runs `scripts/run_experiment.py`, and posts the run and its
+results back to `https://hydrofed.onrender.com/api/training/report`. The page
+shows the workflow's steps while it runs, links to its logs, and lists the run
+under **Recent federated runs** when it finishes. **Stop run** cancels the
+workflow. The run's database, checkpoint and report are also kept as a
+workflow artifact for 30 days.
+
+Set it up once:
+
+1. **Create a GitHub token** the API uses to start and cancel runs. In GitHub,
+   go to **Settings → Developer settings → Fine-grained personal access
+   tokens → Generate new token**. Limit it to the HydroFed repository and give
+   it **Actions: Read and write** (Metadata: Read is added automatically).
+   Nothing else is needed. Note its expiry date.
+2. **Create a runner token**, a long random string the workflow uses to prove
+   its results are genuine, for example with
+   `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+3. **Add the runner token to GitHub:** repository **Settings → Secrets and
+   variables → Actions → New repository secret**, named
+   `HYDROFED_RUNNER_TOKEN`.
+4. **Add these to the HydroFed API service on Render**, then redeploy:
+
+   ```text
+   HYDROFED_GITHUB_REPO=Steven-Yabann/HydroFed
+   HYDROFED_GITHUB_TOKEN=<the token from step 1>
+   HYDROFED_RUNNER_TOKEN=<the same runner token as step 3>
+   HYDROFED_PUBLIC_API_URL=https://hydrofed.onrender.com
+   ```
+
+   `HYDROFED_GITHUB_REF` chooses the branch whose code trains (default
+   `main`).
+
+The workflow file must be on the default branch before GitHub accepts a
+dispatch. A 20-round run takes several minutes on GitHub's CPU runners, plus a
+few minutes to install dependencies. The repository is public, so the runner
+minutes are free. Only one run is in progress at a time.
+
+The results arrive only if GitHub can reach the API, so this needs the public
+https address. A local API trains on its own machine instead (unset
+`HYDROFED_GITHUB_REPO`).
+
+Training runs record their results; they do not change which model scores
+the plant alerts. Those come from the replay feed, built offline with
+`make operator-feed publish`.
 
 The API health endpoint is:
 
@@ -206,7 +258,8 @@ After a release, confirm that:
 
 - Plant telemetry is a replay of SKAB recordings scored offline by the
   federated model, not a live connection to plant sensors.
-- Training runs are started locally or in Colab, not from the hosted dashboard.
+- The hosted dashboard trains on GitHub's CPU runners. Long GPU experiments
+  still belong in Google Colab or Modal.
+- A training run does not replace the model behind the plant alerts; the
+  replay feed is rebuilt offline.
 - SQLite supports one API instance only.
-- Long-running GPU experiments should run in Google Colab or Modal, then save
-  results for dashboard display.

@@ -1807,6 +1807,48 @@ thead .cell-note {
   gap: 8px;
 }
 
+.job-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.job-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  color: var(--ink-muted);
+  font-size: 13.5px;
+}
+
+.job-steps li span {
+  flex: 1;
+}
+
+.job-steps li small {
+  font-size: 12px;
+}
+
+.job-steps li.done {
+  color: var(--ink-secondary);
+}
+
+.job-steps li.current {
+  background: var(--green-50);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.job-steps li.failed {
+  color: var(--critical-ink);
+  font-weight: 600;
+}
+
 .log {
   max-height: 260px;
   margin: 0;
