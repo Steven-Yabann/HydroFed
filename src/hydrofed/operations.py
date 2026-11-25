@@ -266,8 +266,10 @@ class OperationsStore:
             "score_trend": recent,
         }
 
-    def fleet(self) -> dict:
-        plants = [self.plant_summary(plant) for plant in self.plant_ids()]
+    def fleet(self, plants: list[str] | None = None) -> dict:
+        """Summarise every plant, or only ``plants`` when given."""
+        selected = self.plant_ids() if plants is None else [plant for plant in self.plant_ids() if plant in plants]
+        plants = [self.plant_summary(plant) for plant in selected]
         return {
             "source": self.index["source"],
             "sensors": self.index["sensors"],

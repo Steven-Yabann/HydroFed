@@ -26,11 +26,12 @@ import bcrypt
 import jwt
 
 # Each role maps to the permissions the API checks. Adding a role, such as a
-# maintenance engineer or researcher, only needs an entry here.
+# maintenance engineer or researcher, only needs an entry here. Without
+# ``view_all_plants`` an account sees only the plant assigned to it.
 ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
-    "operator": ("view_fleet", "review_alerts", "view_performance"),
+    "operator": ("view_fleet", "review_alerts"),
     "admin": (
-        "view_fleet", "review_alerts", "view_performance",
+        "view_fleet", "view_all_plants", "review_alerts", "view_performance",
         "manage_federation", "manage_nodes", "manage_users",
     ),
 }
@@ -50,11 +51,14 @@ CREATE TABLE IF NOT EXISTS users (
     last_provider TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login_at TEXT,
-    created_by INTEGER
+    created_by INTEGER,
+    plant_id TEXT
 );
 """
 
-USER_COLUMNS = "user_id, email, name, role, status, last_provider, created_at, last_login_at, password_hash"
+USER_COLUMNS = (
+    "user_id, email, name, role, status, last_provider, created_at, last_login_at, plant_id, password_hash"
+)
 
 
 class AuthError(Exception):
@@ -78,7 +82,16 @@ def _public(row: tuple) -> dict:
     user["has_password"] = bool(user.pop("password_hash"))
     user["permissions"] = list(ROLE_PERMISSIONS.get(user["role"], ()))
     user["role_label"] = ROLE_LABELS.get(user["role"], user["role"])
+    if "view_all_plants" in user["permissions"]:
+        user["plant_id"] = None
     return user
+
+
+def visible_plants(user: dict, plants: list[str]) -> list[str]:
+    """Return the plants an account may see: all of them, or its own."""
+    if "view_all_plants" in user["permissions"]:
+        return list(plants)
+    return [plant for plant in plants if plant == user.get("plant_id")]
 
 
 class UserStore:
@@ -89,6 +102,9 @@ class UserStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.path) as database:
             database.execute(USERS_SCHEMA)
+            columns = {row[1] for row in database.execute("PRAGMA table_info(users)")}
+            if "plant_id" not in columns:
+                database.execute("ALTER TABLE users ADD COLUMN plant_id TEXT")
 
     def _query(self, sql: str, parameters: tuple = ()) -> list[tuple]:
         with sqlite3.connect(self.path) as database:
@@ -115,6 +131,7 @@ class UserStore:
         role: str,
         password: str | None = None,
         created_by: int | None = None,
+        plant_id: str | None = None,
     ) -> dict:
         email = email.strip().lower()
         if "@" not in email or email.startswith("@") or email.endswith("@"):
@@ -127,8 +144,9 @@ class UserStore:
         try:
             with sqlite3.connect(self.path) as database:
                 cursor = database.execute(
-                    "INSERT INTO users(email, name, role, password_hash, created_by) VALUES(?, ?, ?, ?, ?)",
-                    (email, name.strip(), role, password_hash, created_by),
+                    "INSERT INTO users(email, name, role, password_hash, created_by, plant_id) "
+                    "VALUES(?, ?, ?, ?, ?, ?)",
+                    (email, name.strip(), role, password_hash, created_by, plant_id or None),
                 )
         except sqlite3.IntegrityError as error:
             raise AuthError(f"{email} already has an account.") from error
@@ -141,7 +159,9 @@ class UserStore:
         role: str | None = None,
         status: str | None = None,
         password: str | None = None,
+        plant_id: str | None = None,
     ) -> dict:
+        """Change an account. ``plant_id=""`` removes its plant assignment."""
         user = self.get(user_id)
         if user is None:
             raise AuthError("That account does not exist.")
@@ -162,6 +182,8 @@ class UserStore:
             "password_hash": hash_password(password) if password else None,
         }
         changes = {column: value for column, value in changes.items() if value is not None}
+        if plant_id is not None:
+            changes["plant_id"] = plant_id or None
         if changes:
             assignments = ", ".join(f"{column} = ?" for column in changes)
             with sqlite3.connect(self.path) as database:
