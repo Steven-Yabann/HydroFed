@@ -151,13 +151,15 @@ export default function AlertsPage() {
       <Card padded={false}>
         <div className="filter-bar">
           <Segmented label="Alert view" options={views} value={view} onChange={setView} />
-          <label className="select">
-            <span className="sr-only">Plant</span>
-            <select value={plantFilter} onChange={(event) => setPlantFilter(event.target.value)}>
-              <option value="">All plants</option>
-              {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.name}</option>)}
-            </select>
-          </label>
+          {plants.length > 1 && (
+            <label className="select">
+              <span className="sr-only">Plant</span>
+              <select value={plantFilter} onChange={(event) => setPlantFilter(event.target.value)}>
+                <option value="">All plants</option>
+                {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.name}</option>)}
+              </select>
+            </label>
+          )}
           <label className="select">
             <span className="sr-only">Severity</span>
             <select value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)}>

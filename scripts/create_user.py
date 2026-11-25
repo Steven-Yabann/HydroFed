@@ -5,8 +5,10 @@ from the dashboard:
 
     .venv/bin/python scripts/create_user.py --email you@example.com --name "Your Name" --role admin
 
-You are asked for a password unless ``--sso-only`` is given, in which case
-the person signs in with Google or Microsoft using the same email.
+Operators also need ``--plant`` (for example ``--plant plant_1``): they see
+only that plant and its alerts. You are asked for a password unless
+``--sso-only`` is given, in which case the person signs in with Google or
+Microsoft using the same email.
 """
 
 from __future__ import annotations
@@ -24,8 +26,11 @@ def main() -> None:
     parser.add_argument("--name", required=True)
     parser.add_argument("--role", choices=sorted(ROLE_PERMISSIONS), default="operator")
     parser.add_argument("--db", default=os.environ.get("HYDROFED_DB_PATH", "artifacts/experiments.db"))
+    parser.add_argument("--plant", help="the plant an operator monitors, such as plant_1")
     parser.add_argument("--sso-only", action="store_true", help="create the account without a password")
     args = parser.parse_args()
+    if "view_all_plants" not in ROLE_PERMISSIONS[args.role] and not args.plant:
+        parser.error("operators need --plant")
 
     password = None
     if not args.sso_only:
@@ -33,7 +38,7 @@ def main() -> None:
         if password != getpass.getpass("Repeat password: "):
             raise SystemExit("Passwords did not match.")
     try:
-        user = UserStore(args.db).create(args.email, args.name, args.role, password)
+        user = UserStore(args.db).create(args.email, args.name, args.role, password, plant_id=args.plant)
     except AuthError as error:
         raise SystemExit(str(error)) from error
     print(f"Created {user['role_label'].lower()} {user['email']} (id {user['user_id']}).")

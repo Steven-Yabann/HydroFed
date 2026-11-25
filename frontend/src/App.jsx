@@ -16,11 +16,19 @@ import PerformancePage from './pages/PerformancePage'
 import PlantPage from './pages/PlantPage'
 import './App.css'
 
+// Operators see only their assigned plant, so their home is that plant's page.
+// eslint-disable-next-line react-refresh/only-export-components
+export function homePath(user) {
+  if (user?.permissions?.includes('view_all_plants')) return '/fleet'
+  return user?.plant_id ? `/plants/${user.plant_id}` : '/my-plant'
+}
+
 const navigation = [
   {
     group: 'Operations',
     items: [
-      { path: '/fleet', label: 'Fleet overview', icon: 'fleet', permission: 'view_fleet' },
+      { path: '/fleet', label: 'Fleet overview', icon: 'fleet', permission: 'view_all_plants' },
+      { path: 'home', label: 'My plant', icon: 'fleet', permission: 'view_fleet', operatorOnly: true },
       { path: '/alerts', label: 'Alerts', icon: 'alert', permission: 'review_alerts' },
     ],
   },
@@ -40,9 +48,27 @@ const navigation = [
   },
 ]
 
+function NoPlant() {
+  return (
+    <div className="forbidden">
+      <Icon name="fleet" size={28} />
+      <h1>No plant assigned yet</h1>
+      <p>An administrator needs to assign the plant you monitor before its readings and alerts appear here.</p>
+    </div>
+  )
+}
+
+const ownPlant = (s, user) => user.permissions.includes('view_all_plants') || s[1] === user.plant_id
+
 const pages = [
-  { match: (s) => s[0] === 'fleet', permission: 'view_fleet', render: () => <FleetPage /> },
-  { match: (s) => s[0] === 'plants' && s[1], permission: 'view_fleet', render: (s) => <PlantPage plantId={s[1]} /> },
+  { match: (s) => s[0] === 'fleet', permission: 'view_all_plants', render: () => <FleetPage /> },
+  { match: (s) => s[0] === 'my-plant', permission: 'view_fleet', render: () => <NoPlant /> },
+  {
+    match: (s) => s[0] === 'plants' && s[1],
+    permission: 'view_fleet',
+    allowed: ownPlant,
+    render: (s) => <PlantPage plantId={s[1]} />,
+  },
   { match: (s) => s[0] === 'alerts', permission: 'review_alerts', render: () => <AlertsPage /> },
   { match: (s) => s[0] === 'performance', permission: 'view_performance', render: () => <PerformancePage /> },
   { match: (s) => s[0] === 'admin' && s[1] === 'federation', permission: 'manage_federation', render: () => <FederationPage /> },
@@ -61,7 +87,7 @@ function Sidebar({ route, open, onClose, onAccount }) {
           <span />
           <span />
         </div>
-        <a className="brand" href="#/fleet" onClick={onClose}>
+        <a className="brand" href={`#${homePath(user)}`} onClick={onClose}>
           <HydroFedMark size={36} />
           <span>
             <strong>HydroFed</strong>
@@ -70,7 +96,9 @@ function Sidebar({ route, open, onClose, onAccount }) {
         </a>
         <nav>
           {navigation.map((section) => {
-            const items = section.items.filter((item) => can(item.permission))
+            const items = section.items
+              .filter((item) => can(item.permission) && !(item.operatorOnly && can('view_all_plants')))
+              .map((item) => (item.path === 'home' ? { ...item, path: homePath(user) } : item))
             if (!items.length) return null
             return (
               <div key={section.group} className="nav-group">
@@ -78,6 +106,7 @@ function Sidebar({ route, open, onClose, onAccount }) {
                 {items.map((item) => {
                   const active = route.path === item.path
                     || (item.path === '/fleet' && route.segments[0] === 'plants')
+                    || (item.operatorOnly && route.segments[0] === 'plants')
                   return (
                     <a
                       key={item.path}
@@ -109,14 +138,14 @@ function Sidebar({ route, open, onClose, onAccount }) {
 }
 
 function Shell({ route }) {
-  const { can } = useAuth()
+  const { can, user } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const page = pages.find((candidate) => candidate.match(route.segments))
 
   useEffect(() => {
-    if (!page) navigate('/fleet', { replace: true })
-  }, [page])
+    if (!page) navigate(homePath(user), { replace: true })
+  }, [page, user])
 
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -129,21 +158,22 @@ function Shell({ route }) {
       <div className="shell-main">
         <header className="topbar">
           <Button variant="ghost" icon="menu" className="menu-button" onClick={() => setMenuOpen(true)} aria-label="Open menu" />
-          <a className="topbar-brand" href="#/fleet"><HydroFedMark size={28} /> HydroFed</a>
+          <a className="topbar-brand" href={`#${homePath(user)}`}><HydroFedMark size={28} /> HydroFed</a>
           <span className="advisory">
             <Icon name="shield" size={14} />
             Advisory monitoring · does not control plant equipment
           </span>
         </header>
         <main id="main" tabIndex={-1}>
-          {!page ? <Loading /> : can(page.permission) ? page.render(route.segments) : (
-            <div className="forbidden">
-              <Icon name="lock" size={28} />
-              <h1>This page is for administrators</h1>
-              <p>Your role does not include access to it. Ask an administrator if you need it.</p>
-              <Button variant="primary" onClick={() => navigate('/fleet')}>Back to the fleet</Button>
-            </div>
-          )}
+          {!page ? <Loading /> : can(page.permission) && (!page.allowed || page.allowed(route.segments, user))
+            ? page.render(route.segments) : (
+              <div className="forbidden">
+                <Icon name="lock" size={28} />
+                <h1>{can(page.permission) ? 'This plant is not assigned to you' : 'This page is for administrators'}</h1>
+                <p>Your role does not include access to it. Ask an administrator if you need it.</p>
+                <Button variant="primary" onClick={() => navigate(homePath(user))}>Back to your dashboard</Button>
+              </div>
+            )}
         </main>
       </div>
       <AccountDrawer open={accountOpen} onClose={() => setAccountOpen(false)} />
@@ -152,14 +182,14 @@ function Shell({ route }) {
 }
 
 export default function App() {
-  const { status } = useAuth()
+  const { status, user } = useAuth()
   const route = useRoute()
 
   if (route.path === '/auth/callback') return <AuthCallback query={route.query} />
   if (status === 'checking') return <div className="boot"><Loading label="Opening HydroFed…" /></div>
   if (status !== 'signed-in') return <LoginPage />
   if (route.path === '/' || route.path === '/login') {
-    navigate('/fleet', { replace: true })
+    navigate(homePath(user), { replace: true })
     return null
   }
   return <Shell route={route} />

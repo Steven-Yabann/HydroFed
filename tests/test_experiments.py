@@ -313,10 +313,10 @@ def test_published_comparisons_are_served_by_the_api(tmp_path):
     database = tmp_path / "experiments.db"
     rows = [{"kind": "detection", "client_id": "federated", "metrics": {"role": "final", **_summary(0.7)}}]
     run_id = publish(ExperimentStore(database), REGIME_EXPERIMENT, {"rounds": 20}, rows)
-    UserStore(database).create("operator@example.com", "Operator", "operator", "correct horse battery")
+    UserStore(database).create("admin@example.com", "Admin", "admin", "correct horse battery")
     client = TestClient(create_app(database))
     token = client.post(
-        "/api/auth/login", json={"email": "operator@example.com", "password": "correct horse battery"},
+        "/api/auth/login", json={"email": "admin@example.com", "password": "correct horse battery"},
     ).json()["token"]
     client.headers["Authorization"] = f"Bearer {token}"
 

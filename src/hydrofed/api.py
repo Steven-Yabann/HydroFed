@@ -25,6 +25,7 @@ from hydrofed.auth import (
     UserStore,
     authorization_redirect,
     bootstrap_admin,
+    visible_plants,
     configured_providers,
     exchange_code,
     issue_session,
@@ -74,6 +75,7 @@ class NewUser(BaseModel):
     name: str
     role: str
     password: str | None = None
+    plant_id: str | None = None
 
 
 class UserChanges(BaseModel):
@@ -81,6 +83,7 @@ class UserChanges(BaseModel):
     role: str | None = None
     status: str | None = None
     password: str | None = None
+    plant_id: str | None = None
 
 
 class AlertReview(BaseModel):
@@ -159,6 +162,23 @@ def create_app(
                 raise HTTPException(403, "Your role cannot do this.")
             return user
         return check
+
+    def own_plant(user: dict, plant: str) -> None:
+        """Refuse plants outside an operator's assignment."""
+        if not visible_plants(user, [plant]):
+            raise HTTPException(403, "This plant is not assigned to your account.")
+
+    def check_assignment(role: str | None, plant_id: str | None, current: dict | None = None) -> None:
+        """Operators need a plant that exists; other roles see every plant."""
+        role = role or (current or {}).get("role")
+        plant = plant_id if plant_id is not None else (current or {}).get("plant_id")
+        if "view_all_plants" in ROLE_PERMISSIONS.get(role, ()):
+            return
+        if not plant:
+            raise HTTPException(400, "Choose the plant this operator monitors.")
+        known = operations_call(operations.plant_ids)
+        if plant not in known:
+            raise HTTPException(400, f"Unknown plant: {plant}")
 
     def operations_call(function, *args, **kwargs):
         try:
@@ -292,34 +312,42 @@ def create_app(
     # --- plant operations ---
 
     @app.get("/api/fleet")
-    def fleet(_: dict = Depends(requires("view_fleet"))) -> dict:
-        return operations_call(operations.fleet)
+    def fleet(user: dict = Depends(requires("view_fleet"))) -> dict:
+        plants = visible_plants(user, operations_call(operations.plant_ids))
+        return operations_call(operations.fleet, plants)
 
     @app.get("/api/plants/{plant}")
-    def plant(plant: str, _: dict = Depends(requires("view_fleet"))) -> dict:
+    def plant(plant: str, user: dict = Depends(requires("view_fleet"))) -> dict:
+        own_plant(user, plant)
         return operations_call(operations.plant_summary, plant)
 
     @app.get("/api/plants/{plant}/telemetry")
     def telemetry(
         plant: str,
         seconds: int = Query(default=600, ge=30, le=3600),
-        _: dict = Depends(requires("view_fleet")),
+        user: dict = Depends(requires("view_fleet")),
     ) -> dict:
+        own_plant(user, plant)
         return operations_call(operations.telemetry, plant, seconds)
 
     @app.get("/api/alerts")
     def alerts(
         plant: str | None = None,
         limit: int = Query(default=200, ge=1, le=1000),
-        _: dict = Depends(requires("view_fleet")),
+        user: dict = Depends(requires("view_fleet")),
     ) -> dict:
-        return {
-            "alerts": operations_call(operations.alerts, plant, limit),
-            "statuses": list(REVIEW_STATUSES),
-        }
+        if plant:
+            own_plant(user, plant)
+            items = operations_call(operations.alerts, plant, limit)
+        elif "view_all_plants" in user["permissions"]:
+            items = operations_call(operations.alerts, None, limit)
+        else:
+            items = operations_call(operations.alerts, user["plant_id"], limit) if user["plant_id"] else []
+        return {"alerts": items, "statuses": list(REVIEW_STATUSES)}
 
     @app.post("/api/alerts/{alert_id}/review")
     def review_alert(alert_id: str, review: AlertReview, user: dict = Depends(requires("review_alerts"))) -> dict:
+        own_plant(user, alert_id.split(":", 1)[0])
         return {"alert": operations_call(operations.review_alert, alert_id, review.status, review.note, user)}
 
     # --- administration ---
@@ -332,23 +360,32 @@ def create_app(
                 {"id": role, "label": ROLE_LABELS.get(role, role), "permissions": list(permissions)}
                 for role, permissions in ROLE_PERMISSIONS.items()
             ],
+            "plants": [
+                {"id": plant, "name": operations.node(plant)["display_name"]}
+                for plant in operations_call(operations.plant_ids)
+            ],
         }
 
     @app.post("/api/admin/users", status_code=201)
     def create_user(request: NewUser, admin: dict = Depends(requires("manage_users"))) -> dict:
+        check_assignment(request.role, request.plant_id)
         try:
             return {"user": users.create(
                 request.email, request.name, request.role, request.password or None, admin["user_id"],
+                request.plant_id,
             )}
         except AuthError as error:
             raise HTTPException(400, str(error)) from error
 
     @app.patch("/api/admin/users/{user_id}")
     def update_user(user_id: int, changes: UserChanges, _: dict = Depends(requires("manage_users"))) -> dict:
+        current = users.get(user_id)
+        if current is not None and (changes.role is not None or changes.plant_id is not None):
+            check_assignment(changes.role, changes.plant_id, current)
         try:
             return {"user": users.update(
                 user_id, name=changes.name, role=changes.role, status=changes.status,
-                password=changes.password or None,
+                password=changes.password or None, plant_id=changes.plant_id,
             )}
         except AuthError as error:
             raise HTTPException(400, str(error)) from error

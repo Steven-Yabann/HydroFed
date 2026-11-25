@@ -6,12 +6,12 @@ from hydrofed.storage import ExperimentStore
 
 
 def signed_in_client(database):
-    """Return a test client signed in as a plant operator."""
-    UserStore(database).create("operator@example.com", "Operator", "operator", "correct horse battery")
+    """Return a test client signed in as an administrator, who can read results."""
+    UserStore(database).create("admin@example.com", "Admin", "admin", "correct horse battery")
     client = TestClient(create_app(database))
     token = client.post(
         "/api/auth/login",
-        json={"email": "operator@example.com", "password": "correct horse battery"},
+        json={"email": "admin@example.com", "password": "correct horse battery"},
     ).json()["token"]
     client.headers["Authorization"] = f"Bearer {token}"
     return client

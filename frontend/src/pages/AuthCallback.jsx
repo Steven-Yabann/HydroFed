@@ -13,7 +13,8 @@ export default function AuthCallback({ query }) {
   useEffect(() => {
     if (query.token) {
       acceptSession({ token: query.token, expires_at: query.expires_at }).then(() => {
-        navigate('/fleet', { replace: true })
+        // The app sends each person to their own home page: the fleet, or their plant.
+        navigate('/', { replace: true })
       })
     }
   }, [query.token, query.expires_at, acceptSession])

@@ -197,9 +197,9 @@ After a release, confirm that:
 1. `https://hydrofed.onrender.com/api/health` returns `{"status":"ok"}`.
 2. The administrator can sign in at the dashboard.
 3. **Fleet overview** shows five plants and **Alerts** lists alerts.
-4. **Model performance** shows all four comparison sections.
-5. An operator added from **Users & access** sees only Fleet, Alerts and
-   Model performance.
+4. **Model performance** shows the training regimes and model families.
+5. An operator added from **Users & access** and assigned to a plant sees
+   only **My plant** and **Alerts**, both limited to that plant.
 6. An alert review survives a restart of the API service.
 
 ## Current limitations

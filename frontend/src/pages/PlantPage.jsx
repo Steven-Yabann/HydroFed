@@ -4,6 +4,7 @@ import { Legend, TimeSeriesChart } from '../components/charts'
 import {
   Button, Card, EmptyState, Loading, PageHeader, ScoreMeter, Segmented, StatTile, StatusBadge,
 } from '../components/ui'
+import { useAuth } from '../lib/auth'
 import { useApi } from '../lib/hooks'
 import { duration, faultTypes, number, plantStatus, sensorValue } from '../lib/format'
 import { navigate, useQueryParam } from '../lib/router'
@@ -19,6 +20,8 @@ const windows = [
 export default function PlantPage({ plantId }) {
   const [windowSeconds, setWindowSeconds] = useQueryParam('window', '900')
   const [showLabels, setShowLabels] = useState(false)
+  const { can } = useAuth()
+  const seesFleet = can('view_all_plants')
   const plant = useApi(`/api/plants/${plantId}`, { interval: 5000 })
   const telemetry = useApi(`/api/plants/${plantId}/telemetry?seconds=${windowSeconds}`, { interval: 5000 })
   const alerts = useApi(`/api/alerts?plant=${plantId}&limit=20`, { interval: 10000 })
@@ -35,7 +38,11 @@ export default function PlantPage({ plantId }) {
   if (plant.loading && !plant.data) return <Loading label="Loading plant…" />
   if (plant.error && !plant.data) {
     return (
-      <EmptyState icon="alert" title="This plant could not be loaded" action={<Button onClick={() => navigate('/fleet')}>Back to the fleet</Button>}>
+      <EmptyState
+        icon="alert"
+        title="This plant could not be loaded"
+        action={seesFleet && <Button onClick={() => navigate('/fleet')}>Back to the fleet</Button>}
+      >
         {plant.error}
       </EmptyState>
     )
@@ -48,7 +55,7 @@ export default function PlantPage({ plantId }) {
 
   return (
     <div className="page">
-      <a className="back-link" href="#/fleet"><Icon name="arrowLeft" size={16} /> Fleet overview</a>
+      {seesFleet && <a className="back-link" href="#/fleet"><Icon name="arrowLeft" size={16} /> Fleet overview</a>}
       <PageHeader
         eyebrow={<LiveIndicator time={current.updated_at} />}
         title={current.name}

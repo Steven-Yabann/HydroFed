@@ -62,7 +62,7 @@ def app_setup(tmp_path, monkeypatch):
     database = tmp_path / "experiments.db"
     users = UserStore(database)
     users.create("admin@example.com", "Ada Admin", "admin", PASSWORD)
-    users.create("operator@example.com", "Otis Operator", "operator", PASSWORD)
+    users.create("operator@example.com", "Otis Operator", "operator", PASSWORD, plant_id="plant_1")
     launcher = FakeLauncher()
     # Second 70 of plant_1's loop: its alert (seconds 40-59) has ended.
     app = create_app(
@@ -136,7 +136,7 @@ def test_admin_adds_changes_and_removes_users(app_setup):
 
     created = client.post(
         "/api/admin/users",
-        json={"email": "new@example.com", "name": "New Person", "role": "operator"},
+        json={"email": "new@example.com", "name": "New Person", "role": "operator", "plant_id": "plant_2"},
         headers=headers,
     )
     assert created.status_code == 201
@@ -145,7 +145,7 @@ def test_admin_adds_changes_and_removes_users(app_setup):
 
     duplicate = client.post(
         "/api/admin/users",
-        json={"email": "NEW@example.com", "name": "Again", "role": "operator"},
+        json={"email": "NEW@example.com", "name": "Again", "role": "operator", "plant_id": "plant_2"},
         headers=headers,
     )
     assert duplicate.status_code == 400
@@ -161,7 +161,7 @@ def test_the_last_administrator_cannot_be_demoted(app_setup):
     headers = sign_in(client, "admin@example.com")
     admin = users.find_by_email("admin@example.com")
 
-    response = client.patch(f"/api/admin/users/{admin['user_id']}", json={"role": "operator"}, headers=headers)
+    response = client.patch(f"/api/admin/users/{admin['user_id']}", json={"role": "operator", "plant_id": "plant_1"}, headers=headers)
 
     assert response.status_code == 400
     assert "administrator" in response.json()["detail"]
@@ -247,7 +247,7 @@ def test_oauth_callback_rejects_a_mismatched_state(app_setup, monkeypatch):
 
 def test_fleet_reports_each_plant_at_its_replay_second(app_setup):
     client, _, _ = app_setup
-    headers = sign_in(client, "operator@example.com")
+    headers = sign_in(client, "admin@example.com")
 
     fleet = client.get("/api/fleet", headers=headers).json()
 
@@ -300,7 +300,8 @@ def test_telemetry_returns_the_recent_window(app_setup):
     # The window covers loop seconds 41-70; the alert ran until second 59.
     assert telemetry["alert"] == [1] * 19 + [0] * 11
     assert set(telemetry["sensors"]) == set(SENSORS)
-    assert client.get("/api/plants/plant_9", headers=headers).status_code == 404
+    admin = sign_in(client, "admin@example.com")
+    assert client.get("/api/plants/plant_9", headers=admin).status_code == 404
 
 
 def test_admin_saves_federation_settings_within_limits(app_setup):
@@ -334,7 +335,7 @@ def test_training_uses_only_participating_plants(app_setup):
 
 def test_comparisons_report_what_is_missing(app_setup):
     client, _, _ = app_setup
-    headers = sign_in(client, "operator@example.com")
+    headers = sign_in(client, "admin@example.com")
 
     digest = client.get("/api/comparisons", headers=headers).json()
 
@@ -385,3 +386,59 @@ def test_admin_variables_are_ignored_once_an_administrator_exists(app_setup, mon
     monkeypatch.setenv("HYDROFED_ADMIN_EMAIL", "late@example.com")
     assert auth.bootstrap_admin(users) is None
     assert users.find_by_email("late@example.com") is None
+
+
+def test_operators_see_only_their_own_plant(app_setup):
+    client, _, _ = app_setup
+    headers = sign_in(client, "operator@example.com")
+
+    fleet = client.get("/api/fleet", headers=headers).json()
+    assert [plant["id"] for plant in fleet["plants"]] == ["plant_1"]
+    assert client.get("/api/plants/plant_2", headers=headers).status_code == 403
+    assert client.get("/api/plants/plant_2/telemetry", headers=headers).status_code == 403
+    assert client.get("/api/alerts?plant=plant_2", headers=headers).status_code == 403
+
+    alerts = client.get("/api/alerts", headers=headers).json()["alerts"]
+    assert {alert["plant"] for alert in alerts} == {"plant_1"}
+    other = client.get("/api/alerts?plant=plant_2", headers=sign_in(client, "admin@example.com")).json()["alerts"]
+    review = client.post(f"/api/alerts/{other[0]['id']}/review", json={"status": "acknowledged"}, headers=headers)
+    assert review.status_code == 403
+
+
+def test_operators_do_not_see_model_performance(app_setup):
+    client, _, _ = app_setup
+    headers = sign_in(client, "operator@example.com")
+
+    assert "view_performance" not in client.get("/api/auth/me", headers=headers).json()["user"]["permissions"]
+    assert client.get("/api/comparisons", headers=headers).status_code == 403
+    assert client.get("/api/runs", headers=headers).status_code == 403
+
+
+def test_operators_need_a_known_plant(app_setup):
+    client, users, _ = app_setup
+    headers = sign_in(client, "admin@example.com")
+
+    missing = client.post("/api/admin/users", json={"email": "x@example.com", "name": "X", "role": "operator"},
+                          headers=headers)
+    assert missing.status_code == 400
+    unknown = client.post(
+        "/api/admin/users",
+        json={"email": "x@example.com", "name": "X", "role": "operator", "plant_id": "plant_9"},
+        headers=headers,
+    )
+    assert unknown.status_code == 400
+
+    operator = users.find_by_email("operator@example.com")
+    moved = client.patch(f"/api/admin/users/{operator['user_id']}", json={"plant_id": "plant_2"}, headers=headers)
+    assert moved.json()["user"]["plant_id"] == "plant_2"
+    promoted = client.patch(f"/api/admin/users/{operator['user_id']}", json={"role": "admin"}, headers=headers)
+    assert promoted.json()["user"]["plant_id"] is None
+
+
+def test_operator_without_a_plant_sees_nothing(app_setup):
+    client, users, _ = app_setup
+    users.create("unassigned@example.com", "Una", "operator", PASSWORD)
+    headers = sign_in(client, "unassigned@example.com")
+
+    assert client.get("/api/fleet", headers=headers).json()["plants"] == []
+    assert client.get("/api/alerts", headers=headers).json()["alerts"] == []

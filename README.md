@@ -84,15 +84,14 @@ in one place.
 
 The React dashboard (`frontend/`) is for two roles:
 
-- **Plant operators** watch the fleet's live anomaly scores, open a plant's
-  score and sensor trends, and review alerts (acknowledge, investigate,
-  resolve or mark a false alarm).
-- **System administrators** can do all of that, and also configure and start
-  federated training, pause or rename plant nodes, and add users.
-
-Both roles can open **Model performance**, which compares federated,
-centralised and isolated training, the model families, and communication
-overhead.
+- **Plant operators** are each assigned one plant. They see only that plant's
+  live anomaly score and sensor trends, and review its alerts (acknowledge,
+  investigate, resolve or mark a false alarm). The API enforces the
+  assignment, so another plant's data is refused, not just hidden.
+- **System administrators** see every plant and all alerts, read **Model
+  performance** (federated, centralised and isolated training, and the model
+  families), configure and start federated training, pause or rename plant
+  nodes, and add users and assign operators to plants.
 
 There is no live plant, so `make operator-feed` scores every SKAB recording
 with the saved federated LSTM checkpoint and the frozen alert policy. The API

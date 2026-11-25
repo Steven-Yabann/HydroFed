@@ -6,7 +6,8 @@ import { useApi } from '../../lib/hooks'
 import { dateTime, initials, relative } from '../../lib/format'
 
 const permissionLabels = {
-  view_fleet: 'Watch the fleet and plant trends',
+  view_fleet: 'Watch plant trends',
+  view_all_plants: 'See every plant',
   review_alerts: 'Acknowledge and review alerts',
   view_performance: 'Read model performance results',
   manage_federation: 'Configure and start federated training',
@@ -14,6 +15,19 @@ const permissionLabels = {
   manage_users: 'Add and manage users',
 }
 const providerLabels = { password: 'Password', google: 'Google', microsoft: 'Microsoft' }
+
+const seesAllPlants = (roles, roleId) => Boolean(roles.find((role) => role.id === roleId)?.permissions.includes('view_all_plants'))
+
+function PlantPicker({ plants, value, onChange }) {
+  return (
+    <Field label="Assigned plant" hint="Operators see only this plant and its alerts." htmlFor="assigned-plant">
+      <select id="assigned-plant" required value={value || ''} onChange={(event) => onChange(event.target.value)}>
+        <option value="" disabled>Choose a plant</option>
+        {plants.map((plant) => <option key={plant.id} value={plant.id}>{plant.name}</option>)}
+      </select>
+    </Field>
+  )
+}
 
 function RolePicker({ roles, value, onChange }) {
   return (
@@ -32,8 +46,8 @@ function RolePicker({ roles, value, onChange }) {
   )
 }
 
-function NewUserDrawer({ roles, onClose, onCreated }) {
-  const [form, setForm] = useState({ name: '', email: '', role: 'operator', method: 'sso', password: '' })
+function NewUserDrawer({ roles, plants, onClose, onCreated }) {
+  const [form, setForm] = useState({ name: '', email: '', role: 'operator', method: 'sso', password: '', plant_id: '' })
   const [error, setError] = useState('')
 
   const submit = async (event) => {
@@ -46,6 +60,7 @@ function NewUserDrawer({ roles, onClose, onCreated }) {
           email: form.email,
           role: form.role,
           password: form.method === 'password' ? form.password : null,
+          plant_id: seesAllPlants(roles, form.role) ? null : form.plant_id,
         },
       })
       onCreated(user)
@@ -76,6 +91,9 @@ function NewUserDrawer({ roles, onClose, onCreated }) {
           <input type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
         </Field>
         <RolePicker roles={roles} value={form.role} onChange={(role) => setForm({ ...form, role })} />
+        {!seesAllPlants(roles, form.role) && (
+          <PlantPicker plants={plants} value={form.plant_id} onChange={(plant_id) => setForm({ ...form, plant_id })} />
+        )}
         <fieldset className="radio-cards">
           <legend>How they sign in</legend>
           <label className={form.method === 'sso' ? 'selected' : ''}>
@@ -97,8 +115,8 @@ function NewUserDrawer({ roles, onClose, onCreated }) {
   )
 }
 
-function EditUserDrawer({ user, roles, isSelf, onClose, onSaved, onDeleted }) {
-  const [form, setForm] = useState({ name: user.name, role: user.role, status: user.status, password: '' })
+function EditUserDrawer({ user, roles, plants, isSelf, onClose, onSaved, onDeleted }) {
+  const [form, setForm] = useState({ name: user.name, role: user.role, status: user.status, password: '', plant_id: user.plant_id || '' })
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
 
@@ -107,7 +125,13 @@ function EditUserDrawer({ user, roles, isSelf, onClose, onSaved, onDeleted }) {
     try {
       const { user: updated } = await api(`/api/admin/users/${user.user_id}`, {
         method: 'PATCH',
-        body: { name: form.name, role: form.role, status: form.status, password: form.password || null },
+        body: {
+          name: form.name,
+          role: form.role,
+          status: form.status,
+          password: form.password || null,
+          plant_id: seesAllPlants(roles, form.role) ? null : form.plant_id,
+        },
       })
       onSaved(updated)
     } catch (failure) {
@@ -151,6 +175,9 @@ function EditUserDrawer({ user, roles, isSelf, onClose, onSaved, onDeleted }) {
           <input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
         </Field>
         <RolePicker roles={roles} value={form.role} onChange={(role) => setForm({ ...form, role })} />
+        {!seesAllPlants(roles, form.role) && (
+          <PlantPicker plants={plants} value={form.plant_id} onChange={(plant_id) => setForm({ ...form, plant_id })} />
+        )}
         <fieldset className="radio-cards radio-inline">
           <legend>Access</legend>
           {['active', 'disabled'].map((status) => (
@@ -181,6 +208,8 @@ export default function UsersPage() {
 
   const list = (users.data?.users || []).filter((user) => `${user.name} ${user.email}`.toLowerCase().includes(query.toLowerCase()))
   const roles = users.data?.roles || []
+  const plants = users.data?.plants || []
+  const plantName = (id) => plants.find((plant) => plant.id === id)?.name || id
   const update = (next) => users.setData({ ...users.data, users: next })
 
   return (
@@ -210,6 +239,7 @@ export default function UsersPage() {
                 <tr>
                   <th scope="col">Person</th>
                   <th scope="col">Role</th>
+                  <th scope="col">Plant</th>
                   <th scope="col">Sign-in</th>
                   <th scope="col">Access</th>
                   <th scope="col">Last active</th>
@@ -229,6 +259,11 @@ export default function UsersPage() {
                       </span>
                     </th>
                     <td>{user.role_label}</td>
+                    <td>
+                      {seesAllPlants(roles, user.role) ? <span className="muted">All plants</span>
+                        : user.plant_id ? plantName(user.plant_id)
+                          : <Badge size="sm" tone="warning" icon="alert">Not assigned</Badge>}
+                    </td>
                     <td>{user.has_password ? 'Password or SSO' : 'Single sign-on'}</td>
                     <td>
                       <Badge size="sm" tone={user.status === 'active' ? 'normal' : 'muted'} icon={user.status === 'active' ? 'check' : 'lock'}>
@@ -248,6 +283,7 @@ export default function UsersPage() {
       {adding && (
         <NewUserDrawer
           roles={roles}
+          plants={plants}
           onClose={() => setAdding(false)}
           onCreated={(user) => {
             update([...users.data.users, user].sort((a, b) => a.name.localeCompare(b.name)))
@@ -260,6 +296,7 @@ export default function UsersPage() {
           key={editing.user_id}
           user={editing}
           roles={roles}
+          plants={plants}
           isSelf={editing.user_id === me.user_id}
           onClose={() => setEditing(null)}
           onSaved={(updated) => {
