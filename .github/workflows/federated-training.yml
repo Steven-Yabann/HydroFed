@@ -1,0 +1,83 @@
+name: Federated training
+
+# Started by the dashboard's Federated training page (hydrofed.jobs.GitHubTrainingLauncher),
+# which finds this run by its name. It can also be started by hand from the Actions tab.
+run-name: Federated training ${{ inputs.job_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Dashboard job ID (hexadecimal)
+        required: true
+        type: string
+      settings:
+        description: 'Federation settings and plants as JSON: {"config": {...}, "clients": ["plant_1", ...]}'
+        required: true
+        type: string
+      callback_url:
+        description: API that receives the results (leave empty to keep them in the run's artifacts only)
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# One training run at a time; a second dispatch waits for the first.
+concurrency:
+  group: federated-training
+  cancel-in-progress: false
+
+jobs:
+  train:
+    name: Train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        # The CPU build of PyTorch avoids downloading CUDA libraries.
+        run: |
+          python -m pip install --upgrade pip
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+          pip install -e .
+
+      - name: Restore SKAB
+        uses: actions/cache@v4
+        with:
+          path: data/SKAB
+          key: skab-${{ hashFiles('scripts/prepare_data.py', 'src/hydrofed/data/**') }}
+
+      - name: Prepare plant partitions
+        run: >
+          python scripts/prepare_data.py --download --input data/SKAB --output data/partitions_skab
+          --window 10 --stride 1 --partition-strategy temporal --minimum-anomalies 100
+
+      - name: Train and report
+        # Inputs reach the script through the environment, never pasted into the shell.
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          SETTINGS: ${{ inputs.settings }}
+          CALLBACK_URL: ${{ inputs.callback_url }}
+          HYDROFED_RUNNER_TOKEN: ${{ secrets.HYDROFED_RUNNER_TOKEN }}
+        run: >
+          python scripts/run_github_job.py --job-id "$JOB_ID" --settings "$SETTINGS"
+          --callback-url "$CALLBACK_URL" --partitions data/partitions_skab --output-dir artifacts/github_job
+
+      - name: Keep the run's outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-${{ inputs.job_id }}
+          path: artifacts/github_job
+          if-no-files-found: ignore
+          retention-days: 30

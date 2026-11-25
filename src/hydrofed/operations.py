@@ -466,20 +466,7 @@ class OperationsStore:
                 "limits": FEDERATION_LIMITS, "choices": FEDERATION_CHOICES}
 
     def update_federation_config(self, changes: dict, user: dict) -> dict:
-        config = self.federation_config()["config"]
-        for key, value in changes.items():
-            if key not in DEFAULT_FEDERATION_CONFIG:
-                raise OperationsError(f"Unknown setting: {key}")
-            if key in FEDERATION_CHOICES:
-                if value not in FEDERATION_CHOICES[key]:
-                    raise OperationsError(f"{key} must be one of {', '.join(FEDERATION_CHOICES[key])}.")
-                config[key] = value
-                continue
-            low, high = FEDERATION_LIMITS[key]
-            number = float(value)
-            if not low <= number <= high:
-                raise OperationsError(f"{key.replace('_', ' ')} must be between {low:g} and {high:g}.")
-            config[key] = int(number) if isinstance(DEFAULT_FEDERATION_CONFIG[key], int) else number
+        config = validate_federation_settings(changes, self.federation_config()["config"])
         with sqlite3.connect(self.path) as database:
             database.execute(
                 """
@@ -490,6 +477,28 @@ class OperationsStore:
                 (json.dumps(config), user["user_id"]),
             )
         return self.federation_config()
+
+
+def validate_federation_settings(changes: dict, base: dict | None = None) -> dict:
+    """Apply ``changes`` to ``base`` (the defaults if omitted), within the allowed limits."""
+    config = dict(base or DEFAULT_FEDERATION_CONFIG)
+    for key, value in changes.items():
+        if key not in DEFAULT_FEDERATION_CONFIG:
+            raise OperationsError(f"Unknown setting: {key}")
+        if key in FEDERATION_CHOICES:
+            if value not in FEDERATION_CHOICES[key]:
+                raise OperationsError(f"{key} must be one of {', '.join(FEDERATION_CHOICES[key])}.")
+            config[key] = value
+            continue
+        low, high = FEDERATION_LIMITS[key]
+        try:
+            number = float(value)
+        except (TypeError, ValueError) as error:
+            raise OperationsError(f"{key.replace('_', ' ')} must be a number.") from error
+        if not low <= number <= high:
+            raise OperationsError(f"{key.replace('_', ' ')} must be between {low:g} and {high:g}.")
+        config[key] = int(number) if isinstance(DEFAULT_FEDERATION_CONFIG[key], int) else number
+    return config
 
 
 SEVERITY_ORDER = ("medium", "high", "critical")
