@@ -93,6 +93,11 @@ The React dashboard (`frontend/`) is for two roles:
   families), configure and start federated training, pause or rename plant
   nodes, and add users and assign operators to plants.
 
+Each plant also has a **Messages** conversation between its operator and the
+administrators. Administrators see every plant's conversation. A message can
+refer to one of the plant's alerts, and the sidebar shows how many messages
+are unread.
+
 There is no live plant, so `make operator-feed` scores every SKAB recording
 with the saved federated LSTM checkpoint and the frozen alert policy. The API
 replays those scores second by second as if they were streaming in.

@@ -3,6 +3,7 @@ import { Icon, HydroFedMark } from './components/Icon'
 import { Button, Loading } from './components/ui'
 import { useAuth } from './lib/auth'
 import { initials } from './lib/format'
+import { MESSAGES_READ, useApi } from './lib/hooks'
 import { navigate, useRoute } from './lib/router'
 import AccountDrawer from './pages/AccountDrawer'
 import AlertsPage from './pages/AlertsPage'
@@ -12,6 +13,7 @@ import NodesPage from './pages/admin/NodesPage'
 import UsersPage from './pages/admin/UsersPage'
 import FleetPage from './pages/FleetPage'
 import LoginPage from './pages/LoginPage'
+import MessagesPage from './pages/MessagesPage'
 import PerformancePage from './pages/PerformancePage'
 import PlantPage from './pages/PlantPage'
 import './App.css'
@@ -30,6 +32,7 @@ const navigation = [
       { path: '/fleet', label: 'Fleet overview', icon: 'fleet', permission: 'view_all_plants' },
       { path: 'home', label: 'My plant', icon: 'fleet', permission: 'view_fleet', operatorOnly: true },
       { path: '/alerts', label: 'Alerts', icon: 'alert', permission: 'review_alerts' },
+      { path: '/messages', label: 'Messages', icon: 'message', permission: 'send_messages' },
     ],
   },
   {
@@ -70,6 +73,12 @@ const pages = [
     render: (s) => <PlantPage plantId={s[1]} />,
   },
   { match: (s) => s[0] === 'alerts', permission: 'review_alerts', render: () => <AlertsPage /> },
+  {
+    match: (s) => s[0] === 'messages',
+    permission: 'send_messages',
+    allowed: (s, user) => !s[1] || ownPlant(s, user),
+    render: (s) => <MessagesPage plantId={s[1]} />,
+  },
   { match: (s) => s[0] === 'performance', permission: 'view_performance', render: () => <PerformancePage /> },
   { match: (s) => s[0] === 'admin' && s[1] === 'federation', permission: 'manage_federation', render: () => <FederationPage /> },
   { match: (s) => s[0] === 'admin' && s[1] === 'nodes', permission: 'manage_nodes', render: () => <NodesPage /> },
@@ -78,6 +87,14 @@ const pages = [
 
 function Sidebar({ route, open, onClose, onAccount }) {
   const { user, can } = useAuth()
+  const inbox = useApi(can('send_messages') ? '/api/messages' : null, { interval: 20000 })
+  const unread = inbox.data?.unread || 0
+  const reloadInbox = inbox.reload
+  useEffect(() => {
+    const refresh = () => reloadInbox({ quiet: true })
+    window.addEventListener(MESSAGES_READ, refresh)
+    return () => window.removeEventListener(MESSAGES_READ, refresh)
+  }, [reloadInbox])
   return (
     <>
       {open && <button type="button" className="sidebar-scrim" aria-label="Close menu" onClick={onClose} />}
@@ -107,6 +124,7 @@ function Sidebar({ route, open, onClose, onAccount }) {
                   const active = route.path === item.path
                     || (item.path === '/fleet' && route.segments[0] === 'plants')
                     || (item.operatorOnly && route.segments[0] === 'plants')
+                    || (item.path === '/messages' && route.segments[0] === 'messages')
                   return (
                     <a
                       key={item.path}
@@ -117,6 +135,9 @@ function Sidebar({ route, open, onClose, onAccount }) {
                     >
                       <Icon name={item.icon} size={18} />
                       {item.label}
+                      {item.path === '/messages' && unread > 0 && (
+                        <span className="nav-count" aria-label={`${unread} unread`}>{unread > 99 ? '99+' : unread}</span>
+                      )}
                     </a>
                   )
                 })}

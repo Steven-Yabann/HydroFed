@@ -29,9 +29,9 @@ import jwt
 # maintenance engineer or researcher, only needs an entry here. Without
 # ``view_all_plants`` an account sees only the plant assigned to it.
 ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
-    "operator": ("view_fleet", "review_alerts"),
+    "operator": ("view_fleet", "review_alerts", "send_messages"),
     "admin": (
-        "view_fleet", "view_all_plants", "review_alerts", "view_performance",
+        "view_fleet", "view_all_plants", "review_alerts", "send_messages", "view_performance",
         "manage_federation", "manage_nodes", "manage_users",
     ),
 }

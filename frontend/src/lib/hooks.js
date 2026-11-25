@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 
+// Fired after a conversation is read, so the sidebar's unread count updates at once.
+export const MESSAGES_READ = 'hydrofed:messages-read'
+
 // Load an API path, optionally refreshing on an interval. Polling pauses
 // while the tab is hidden so idle dashboards do not keep the server busy.
 export function useApi(path, { interval = 0, enabled = true } = {}) {

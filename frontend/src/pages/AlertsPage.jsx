@@ -4,6 +4,7 @@ import {
   Button, Card, Drawer, EmptyState, Field, Loading, Notice, PageHeader, ReviewBadge, Segmented, SeverityBadge,
 } from '../components/ui'
 import { api } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import { useApi } from '../lib/hooks'
 import { clock, dateTime, duration, faultTypes, number, relative, reviewInfo, severityInfo } from '../lib/format'
 import { navigate, useQueryParam } from '../lib/router'
@@ -23,6 +24,7 @@ const reviewOptions = [
 ]
 
 function ReviewDrawer({ alert, sensorLabels, onClose, onSaved }) {
+  const { can } = useAuth()
   const [status, setStatus] = useState(alert?.status === 'open' ? 'acknowledged' : alert?.status)
   const [note, setNote] = useState(alert?.note || '')
   const [error, setError] = useState('')
@@ -99,7 +101,18 @@ function ReviewDrawer({ alert, sensorLabels, onClose, onSaved }) {
         <textarea rows={4} value={note} maxLength={1000} onChange={(event) => setNote(event.target.value)} />
       </Field>
 
-      <Button variant="ghost" icon="chart" onClick={() => navigate(`/plants/${alert.plant}`)}>Open the plant's trends</Button>
+      <div className="drawer-links">
+        <Button variant="ghost" icon="chart" onClick={() => navigate(`/plants/${alert.plant}`)}>Open the plant's trends</Button>
+        {can('send_messages') && (
+          <Button
+            variant="ghost"
+            icon="message"
+            onClick={() => navigate(`/messages/${alert.plant}?alert=${encodeURIComponent(alert.id)}`)}
+          >
+            Message about this alert
+          </Button>
+        )}
+      </div>
     </Drawer>
   )
 }
