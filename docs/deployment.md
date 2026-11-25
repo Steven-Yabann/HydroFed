@@ -251,8 +251,10 @@ After a release, confirm that:
 3. **Fleet overview** shows five plants and **Alerts** lists alerts.
 4. **Model performance** shows the training regimes and model families.
 5. An operator added from **Users & access** and assigned to a plant sees
-   only **My plant** and **Alerts**, both limited to that plant.
-6. An alert review survives a restart of the API service.
+   only **My plant**, **Alerts** and **Messages**, all limited to that plant.
+6. A message the operator sends appears, unread, in the administrator's
+   **Messages**, and the reply reaches the operator.
+7. An alert review and the messages survive a restart of the API service.
 
 ## Current limitations
 
