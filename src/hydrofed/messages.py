@@ -133,6 +133,19 @@ class MessageStore:
             for plant in plants
         ]
 
+    def unread_for(self, plant: str, user: dict) -> int:
+        """How many messages from other people this account has not read in a conversation."""
+        with sqlite3.connect(self.path) as database:
+            return database.execute(
+                """
+                SELECT COUNT(*) FROM messages m
+                LEFT JOIN message_reads r ON r.plant_id = m.plant_id AND r.user_id = ?
+                WHERE m.plant_id = ? AND m.message_id > COALESCE(r.last_read_id, 0)
+                  AND (m.author_id IS NULL OR m.author_id != ?)
+                """,
+                (user["user_id"], plant, user["user_id"]),
+            ).fetchone()[0]
+
     @staticmethod
     def _mark_read(database: sqlite3.Connection, user: dict, plant: str, message_id: int) -> None:
         database.execute(

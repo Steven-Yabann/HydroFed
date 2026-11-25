@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -40,6 +40,7 @@ from hydrofed.auth import (
 from hydrofed.comparisons import comparison_digest
 from hydrofed.jobs import GitHubTrainingLauncher, JobError, TrainingLauncher, make_launcher
 from hydrofed.messages import MessageError, MessageStore
+from hydrofed.notifications import Mailer, mailer_from_environment, notify_new_message
 from hydrofed.operations import REVIEW_STATUSES, OperationsError, OperationsStore
 from hydrofed.storage import ExperimentStore
 
@@ -99,6 +100,10 @@ class NewMessage(BaseModel):
     alert_id: str | None = None
 
 
+class Preferences(BaseModel):
+    notify_messages: bool
+
+
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
@@ -111,6 +116,7 @@ def create_app(
     partition_summary_path: str | Path | None = None,
     launcher: TrainingLauncher | GitHubTrainingLauncher | None = None,
     clock=None,
+    mailer: Mailer | None = None,
 ) -> FastAPI:
     database_path = (
         Path(db_path)
@@ -151,6 +157,7 @@ def create_app(
     bootstrap_admin(users)
     operations = OperationsStore(database_path, feed_directory, **({"clock": clock} if clock else {}))
     messages = MessageStore(database_path)
+    email = mailer or mailer_from_environment()
     training = launcher or make_launcher(database_path)
     key = secret_key(database_path)
 
@@ -279,6 +286,15 @@ def create_app(
         except AuthError as error:
             raise HTTPException(400, str(error)) from error
 
+    @app.get("/api/auth/preferences")
+    def preferences(user: dict = Depends(current_user)) -> dict:
+        return {"notify_messages": user["notify_messages"], "email_available": email.available}
+
+    @app.put("/api/auth/preferences")
+    def update_preferences(request: Preferences, user: dict = Depends(current_user)) -> dict:
+        updated = users.update(user["user_id"], notify_messages=request.notify_messages)
+        return {"notify_messages": updated["notify_messages"], "email_available": email.available}
+
     @app.get("/api/results")
     def results(
         experiment: str | None = None,
@@ -386,7 +402,12 @@ def create_app(
         }
 
     @app.post("/api/messages/{plant}", status_code=201)
-    def send_message(plant: str, request: NewMessage, user: dict = Depends(requires("send_messages"))) -> dict:
+    def send_message(
+        plant: str,
+        request: NewMessage,
+        background: BackgroundTasks,
+        user: dict = Depends(requires("send_messages")),
+    ) -> dict:
         conversation_plant(user, plant)
         alert = None
         if request.alert_id:
@@ -398,9 +419,15 @@ def create_app(
                 raise HTTPException(400, "That alert does not belong to this plant or has not happened yet.")
             alert = {"id": found["id"], "severity": found["severity"], "started_at": found["started_at"]}
         try:
-            return {"message": messages.post(plant, user, request.body, alert)}
+            message = messages.post(plant, user, request.body, alert)
         except MessageError as error:
             raise HTTPException(400, str(error)) from error
+        # Emails go out after the response, so a slow mail server never delays sending.
+        background.add_task(
+            notify_new_message, email, users.list(), lambda account: messages.unread_for(plant, account),
+            message, user, operations.node(plant)["display_name"], f"{frontend_url}/#/messages/{plant}",
+        )
+        return {"message": message}
 
     # --- administration ---
 
