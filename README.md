@@ -96,7 +96,8 @@ The React dashboard (`frontend/`) is for two roles:
 Each plant also has a **Messages** conversation between its operator and the
 administrators. Administrators see every plant's conversation. A message can
 refer to one of the plant's alerts, and the sidebar shows how many messages
-are unread.
+are unread. When email is set up (see `docs/deployment.md`), the other side of
+the conversation also gets an email, once per conversation until they read it.
 
 There is no live plant, so `make operator-feed` scores every SKAB recording
 with the saved federated LSTM checkpoint and the frozen alert policy. The API

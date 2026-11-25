@@ -1,15 +1,27 @@
 import { useState } from 'react'
-import { Button, Drawer, Field, Notice } from '../components/ui'
+import { Button, Drawer, Field, Notice, Switch } from '../components/ui'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { useApi } from '../lib/hooks'
 import { dateTime, initials } from '../lib/format'
 
 const providerNames = { password: 'Email and password', google: 'Google', microsoft: 'Microsoft' }
 
 export default function AccountDrawer({ open, onClose }) {
-  const { user, signOut } = useAuth()
+  const { user, can, signOut } = useAuth()
   const [form, setForm] = useState({ current: '', next: '' })
   const [message, setMessage] = useState(null)
+  const preferences = useApi(open && can('send_messages') ? '/api/auth/preferences' : null)
+  const [preferenceError, setPreferenceError] = useState('')
+
+  const setEmails = async (on) => {
+    setPreferenceError('')
+    try {
+      preferences.setData(await api('/api/auth/preferences', { method: 'PUT', body: { notify_messages: on } }))
+    } catch (error) {
+      setPreferenceError(error.message)
+    }
+  }
 
   const changePassword = async (event) => {
     event.preventDefault()
@@ -45,6 +57,30 @@ export default function AccountDrawer({ open, onClose }) {
         <div><dt>Last sign-in</dt><dd>{dateTime(user.last_login_at)}</dd></div>
         <div><dt>Member since</dt><dd>{dateTime(user.created_at)}</dd></div>
       </dl>
+
+      {preferences.data && (
+        <section className="stack">
+          <h3>Email notifications</h3>
+          {preferenceError && <Notice tone="critical">{preferenceError}</Notice>}
+          <div className="setting-row">
+            <span>
+              <strong>Email me about new messages</strong>
+              <small>
+                One email to {user.email} when a conversation has something new for you, then none until you read it.
+              </small>
+            </span>
+            <Switch
+              checked={preferences.data.notify_messages}
+              onChange={setEmails}
+              label="Email me about new messages"
+              disabled={!preferences.data.email_available}
+            />
+          </div>
+          {!preferences.data.email_available && (
+            <Notice tone="info">Email is not set up on this server yet, so no emails are sent.</Notice>
+          )}
+        </section>
+      )}
 
       {user.has_password ? (
         <form className="stack" onSubmit={changePassword}>
