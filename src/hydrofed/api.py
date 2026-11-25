@@ -36,7 +36,7 @@ from hydrofed.auth import (
     verify_id_token,
 )
 from hydrofed.comparisons import comparison_digest
-from hydrofed.jobs import JobError, TrainingLauncher
+from hydrofed.jobs import GitHubTrainingLauncher, JobError, TrainingLauncher, make_launcher
 from hydrofed.operations import REVIEW_STATUSES, OperationsError, OperationsStore
 from hydrofed.storage import ExperimentStore
 
@@ -101,7 +101,7 @@ def create_app(
     feed_path: str | Path | None = None,
     comparison_path: str | Path | None = None,
     partition_summary_path: str | Path | None = None,
-    launcher: TrainingLauncher | None = None,
+    launcher: TrainingLauncher | GitHubTrainingLauncher | None = None,
     clock=None,
 ) -> FastAPI:
     database_path = (
@@ -142,7 +142,7 @@ def create_app(
     users = UserStore(database_path)
     bootstrap_admin(users)
     operations = OperationsStore(database_path, feed_directory, **({"clock": clock} if clock else {}))
-    training = launcher or TrainingLauncher(database_path)
+    training = launcher or make_launcher(database_path)
     key = secret_key(database_path)
 
     def current_user(authorization: str | None = Header(default=None)) -> dict:
@@ -441,5 +441,20 @@ def create_app(
     @app.get("/api/admin/training")
     def training_status(_: dict = Depends(requires("manage_federation"))) -> dict:
         return training.status()
+
+    # --- training runner (GitHub Actions) ---
+
+    @app.post("/api/training/report")
+    def training_report(report: dict = Body(...), authorization: str | None = Header(default=None)) -> dict:
+        """Receive a finished run from the training workflow, authenticated by the runner token."""
+        token = authorization[7:] if authorization and authorization.lower().startswith("bearer ") else None
+        try:
+            return training.receive_report(token, report)
+        except PermissionError as error:
+            raise HTTPException(401, str(error)) from error
+        except JobError as error:
+            raise HTTPException(409, str(error)) from error
+        except (KeyError, TypeError, ValueError) as error:
+            raise HTTPException(400, f"The report is incomplete: {error}") from error
 
     return app

@@ -134,6 +134,67 @@ class ExperimentStore:
                 ),
             )
 
+    def export_run(self, run_id: str) -> dict:
+        """Return a run and every result it recorded, to copy into another database."""
+        with sqlite3.connect(self.path) as database:
+            run = database.execute(
+                "SELECT run_id, experiment, status, config_json, started_at, finished_at, error_message "
+                "FROM experiment_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if run is None:
+                raise ValueError(f"Unknown experiment run: {run_id}")
+            results = database.execute(
+                "SELECT experiment, client_id, round, kind, metrics_json, created_at "
+                "FROM results WHERE run_id = ? ORDER BY id",
+                (run_id,),
+            ).fetchall()
+        return {
+            "run": dict(zip(
+                ("run_id", "experiment", "status", "config", "started_at", "finished_at", "error_message"),
+                (*run[:3], json.loads(run[3]), *run[4:]),
+            )),
+            "results": [
+                dict(zip(("experiment", "client_id", "round", "kind", "metrics", "created_at"),
+                         (*row[:4], json.loads(row[4]), row[5])))
+                for row in results
+            ],
+        }
+
+    def import_run(self, exported: dict) -> str:
+        """Save a run exported from another database, replacing any earlier copy."""
+        run = exported["run"]
+        if run.get("status") not in {"running", "completed", "failed"}:
+            raise ValueError("status must be 'running', 'completed' or 'failed'")
+        with sqlite3.connect(self.path) as database:
+            database.execute("DELETE FROM results WHERE run_id = ?", (run["run_id"],))
+            database.execute(
+                """
+                INSERT OR REPLACE INTO experiment_runs(
+                    run_id, experiment, status, config_json, started_at, finished_at, error_message
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run["run_id"], run["experiment"], run["status"], json.dumps(run.get("config") or {}),
+                    run["started_at"], run.get("finished_at"), run.get("error_message"),
+                ),
+            )
+            database.executemany(
+                """
+                INSERT INTO results(run_id, experiment, client_id, round, kind, metrics_json, created_at)
+                VALUES(?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        run["run_id"], row["experiment"], row.get("client_id"), row.get("round"),
+                        row["kind"], json.dumps(row["metrics"]), row.get("created_at"),
+                    )
+                    for row in exported.get("results", [])
+                ],
+            )
+        return run["run_id"]
+
     def list_runs(
         self,
         experiment: str | None = None,
