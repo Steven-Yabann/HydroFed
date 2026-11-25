@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Icon } from '../components/Icon'
-import { BarChart, DotPlot, Legend, LineChart } from '../components/charts'
-import { Card, EmptyState, Loading, Notice, PageHeader, Segmented, StatTile } from '../components/ui'
+import { BarChart } from '../components/charts'
+import { Card, EmptyState, Loading, Notice, PageHeader, Segmented } from '../components/ui'
 import { useApi } from '../lib/hooks'
 import { bytes, integer, number, percent } from '../lib/format'
 import { useQueryParam } from '../lib/router'
@@ -31,10 +31,11 @@ const scoreOptions = [
 ]
 const sections = [
   { id: 'regimes', label: 'Training regimes' },
-  { id: 'scenarios', label: 'Heterogeneous & scarce plants' },
   { id: 'models', label: 'Model families' },
-  { id: 'communication', label: 'Communication overhead' },
 ]
+
+// The results this page shows; personalised runs feed the regimes toggle.
+const shown = ['regimes', 'models']
 
 const mean = (summary, metric) => summary?.[metric]?.mean
 const sd = (summary, metric) => summary?.[metric]?.sd
@@ -104,7 +105,6 @@ function Findings({ data, scoreKey }) {
   const centralFull = auc('centralised')
   const fedModel = auc('federated', 'model_only')
   const isolatedModel = auc('isolated', 'model_only')
-  const twenty = data.communication?.federated.at(-1)
 
   return (
     <div className="findings">
@@ -128,18 +128,6 @@ function Findings({ data, scoreKey }) {
           </p>
         </div>
       </article>
-      {twenty && (
-        <article>
-          <span className="finding-icon"><Icon name="upload" size={18} /></span>
-          <div>
-            <strong>{bytes(twenty.bytes_per_client)} per plant for a {twenty.rounds}-round run</strong>
-            <p>
-              That equals {number(twenty.break_even_days_1hz, 1)} days of streaming eight sensors at 1 Hz to a central server,
-              so federation moves less data whenever plants retrain less often than that.
-            </p>
-          </div>
-        </article>
-      )}
       {scoreKey === 'model_only' && (
         <Notice tone="info">“Model only” scores use the autoencoder's reconstruction residuals, isolating what training contributes.</Notice>
       )}
@@ -193,75 +181,6 @@ function RegimesSection({ data, scoreKey }) {
         Mean ± standard deviation over three seeds. Differences under about 0.02 are within run-to-run noise.
         Recall and false alarm rate are two ends of one trade-off, so read them together; F1 alone flatters a detector that alarms constantly.
       </p>
-    </Card>
-  )
-}
-
-function ScenariosSection({ data, scoreKey }) {
-  const scenarios = data.scenarios.scenarios
-  const regimeIds = [...new Set(scenarios.flatMap((scenario) => scenario.regimes.map((regime) => regime.id)))]
-  const series = regimeIds.map((id) => ({
-    id,
-    label: scenarios.flatMap((scenario) => scenario.regimes).find((regime) => regime.id === id).label,
-    color: regimeColors[id],
-  }))
-  const rows = scenarios.map((scenario) => ({
-    id: `${scenario.id}-${scenario.plants}`,
-    label: scenario.plants === 'All plants' ? scenario.label : `${scenario.label} (${scenario.plants.replaceAll('plant_', 'P')})`,
-    values: Object.fromEntries(scenario.regimes.map((regime) => [regime.id, regime[scoreKey]])),
-  }))
-  const values = rows.flatMap((row) => Object.values(row.values)).filter(Number.isFinite)
-  const domain = [Math.floor(Math.min(...values) * 20) / 20, Math.min(1, Math.ceil(Math.max(...values) * 20) / 20)]
-
-  const heterogeneous = scenarios.find((scenario) => scenario.id === 'heterogeneous')
-  const plants = heterogeneous ? Object.keys(heterogeneous.regimes[0]?.model_only_by_plant || {}) : []
-  const profiles = data.scenarios.profiles || {}
-
-  return (
-    <Card
-      id="scenarios"
-      title="Heterogeneous and data-scarce plants"
-      subtitle="The two conditions federated learning is meant to help with: plants that record differently, and plants with little training data."
-    >
-      <Legend items={series} />
-      <DotPlot rows={rows} series={series} domain={domain} />
-      <p className="caption">
-        Within-recording AUC on held-out recordings. Scarce rows train plants 4 and 5 on only the first 100, 50 or 25 seconds of each recording.
-      </p>
-
-      {heterogeneous && (
-        <>
-          <h3 className="chart-title">Model-only AUC per plant when plants differ</h3>
-          <div className="table-scroll">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">Approach</th>
-                  {plants.map((plant) => (
-                    <th key={plant} scope="col" className="numeric">
-                      {plant.replace('_', ' ')}
-                      <span className="cell-note">{profiles[plant]?.description}</span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {heterogeneous.regimes.map((regime) => (
-                  <tr key={regime.id}>
-                    <th scope="row"><span className="series-key" style={{ background: regimeColors[regime.id] }} />{regime.label}</th>
-                    {plants.map((plant) => {
-                      const value = regime.model_only_by_plant?.[plant]
-                      const top = value === Math.max(...heterogeneous.regimes.map((item) => item.model_only_by_plant?.[plant] ?? 0))
-                      return <td key={plant} className={`numeric ${top ? 'best' : ''}`}>{number(value, 3)}{top ? ' ★' : ''}</td>
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="caption">★ marks the best approach for each plant. One shared model fits unlike plants worse than their own models do.</p>
-        </>
-      )}
     </Card>
   )
 }
@@ -341,123 +260,20 @@ function ModelsSection({ data, scoreKey }) {
   )
 }
 
-function CommunicationSection({ data }) {
-  const communication = data.communication
-  const runs = communication.federated
-  const longest = runs.at(-1)
-  const perDay = communication.streaming_bytes_per_plant_day_1hz
-  const maxDays = Math.max(10, Math.ceil(longest.break_even_days_1hz * 1.6))
-
-  const volumeRows = [
-    ...runs.map((run) => ({
-      id: `fl-${run.rounds}`,
-      label: `Federated, ${run.rounds} rounds`,
-      value: run.total_bytes,
-      color: 'var(--series-1)',
-      note: `${bytes(run.bytes_per_client)} per plant · ${number(run.multiple_of_csv, 1)}× the SKAB CSV files`,
-    })),
-    {
-      id: 'csv',
-      label: 'Centralise SKAB CSVs',
-      value: communication.raw.csv_bytes,
-      color: 'var(--series-2)',
-      note: `${communication.raw.csv_files} files, ${integer(communication.raw.rows)} rows`,
-    },
-    {
-      id: 'binary',
-      label: 'Centralise as float32',
-      value: communication.raw.binary_bytes,
-      color: 'var(--series-2)',
-      note: `${communication.raw.sensors} sensors × ${integer(communication.raw.rows)} rows × 4 bytes`,
-    },
-  ]
-
-  const days = Array.from({ length: maxDays + 1 }, (_, day) => day)
-  const lines = [
-    {
-      id: 'stream',
-      label: 'Streaming raw data',
-      color: 'var(--series-2)',
-      points: days.map((day) => [day, perDay * day]),
-    },
-    ...runs.map((run, index) => ({
-      id: `run-${run.rounds}`,
-      label: `${run.rounds}-round run`,
-      color: index === runs.length - 1 ? 'var(--series-1)' : `var(--series-1-${index === 0 ? 'light' : 'mid'})`,
-      points: days.map((day) => [day, run.bytes_per_client]),
-    })),
-  ]
-
-  return (
-    <Card
-      id="communication"
-      title="Communication overhead"
-      subtitle="Bytes counted for the weight arrays each plant uploads and the global model sent back, without gRPC framing."
-    >
-      <div className="stat-grid stat-grid-compact">
-        <StatTile label="Model size" value={bytes(communication.model_bytes)} detail="LSTM autoencoder weights" />
-        <StatTile label="Per round, whole fleet" value={bytes(longest.bytes_per_round)} detail={`${communication.clients} plants up and down`} />
-        <StatTile label={`${longest.rounds}-round run, whole fleet`} value={bytes(longest.total_bytes)} detail={`${bytes(longest.uplink_bytes)} up · ${bytes(longest.downlink_bytes)} down`} />
-        <StatTile label="Break-even at 1 Hz" value={`${number(longest.break_even_days_1hz, 1)} days`} detail="of one plant streaming 8 sensors" />
-      </div>
-
-      <div className="two-column">
-        <div>
-          <h3 className="chart-title">Total data moved</h3>
-          <BarChart rows={volumeRows} format={(value) => bytes(value)} unitLabel={(value) => bytes(value)} />
-          <Legend items={[{ label: 'Federated (weights only)', color: 'var(--series-1)' }, { label: 'Centralised (raw data)', color: 'var(--series-2)' }]} />
-        </div>
-        <div>
-          <h3 className="chart-title">One plant's traffic: retraining vs streaming</h3>
-          <LineChart
-            series={lines}
-            xLabel="Days of operation"
-            yFormat={(value) => bytes(value)}
-            xFormat={(value) => `${value}`}
-            markers={[{ x: longest.break_even_days_1hz, label: `${number(longest.break_even_days_1hz, 1)} d` }]}
-          />
-        </div>
-      </div>
-
-      {communication.per_model.length > 0 && (
-        <>
-          <h3 className="chart-title">Traffic per training run, by model</h3>
-          <BarChart
-            rows={communication.per_model.map((row) => ({
-              id: row.id,
-              label: row.label,
-              value: row.communication_bytes,
-              color: modelColors[row.id] || 'var(--series-other)',
-              note: `${row.training}, ${row.rounds} rounds · model ${bytes(row.model_bytes)}`,
-            }))}
-            format={(value) => bytes(value)}
-            unitLabel={(value) => bytes(value)}
-          />
-        </>
-      )}
-      <p className="caption">
-        SKAB holds only about 13 hours of data, so one training run moves more bytes than its recordings. A real plant streams
-        continuously ({bytes(perDay)} a day at 1 Hz), so federation saves bandwidth when retraining is less frequent than the break-even point.
-        Higher sampling rates, such as vibration bursts, bring the break-even point earlier.
-      </p>
-    </Card>
-  )
-}
-
 export default function PerformancePage() {
   const [role, setRole] = useQueryParam('recordings', 'final')
   const [scoreKey, setScoreKey] = useQueryParam('score', 'full')
   const comparison = useApi(`/api/comparisons?role=${role}`)
   const data = comparison.data
 
-  const missing = useMemo(() => (data ? Object.entries(data.available).filter(([, present]) => !present).map(([name]) => name) : []), [data])
+  const missing = useMemo(() => (data ? Object.entries(data.available).filter(([name, present]) => shown.includes(name) && !present).map(([name]) => name) : []), [data])
 
   return (
     <div className="page">
       <PageHeader
         eyebrow="Research results · SKAB benchmark"
         title="Model performance"
-        description="How federated learning compares with centralised and isolated training, which model family detects faults best, and what federation costs in network traffic."
+        description="How federated learning compares with centralised and isolated training, and which model family detects faults best."
       />
 
       <div className="sticky-controls">
@@ -487,9 +303,7 @@ export default function PerformancePage() {
           )}
           {data.regimes && <Findings data={data} scoreKey={scoreKey} />}
           {data.regimes && <RegimesSection data={data} scoreKey={scoreKey} />}
-          {data.scenarios && <ScenariosSection data={data} scoreKey={scoreKey} />}
           {data.models && <ModelsSection data={data} scoreKey={scoreKey} />}
-          {data.communication && <CommunicationSection data={data} />}
           <p className="data-source">
             <Icon name="database" size={14} />
             {percent(0.54, 0)} of held-out test windows are anomalous, so an always-on alarm would score F1 ≈ 0.70.
