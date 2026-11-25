@@ -4,8 +4,10 @@ Every route except health, the sign-in routes and the provider list needs a
 session token (``Authorization: Bearer ...``). Routes then check the role's
 permissions from ``hydrofed.auth.ROLE_PERMISSIONS``:
 
-- plant operators watch the fleet, review alerts and read performance results
-- administrators also manage users, plant nodes and federated training
+- plant operators watch their own plant, review its alerts and message the
+  administrators about it
+- administrators see every plant, read performance results and manage users,
+  plant nodes and federated training
 """
 
 import json
@@ -37,6 +39,7 @@ from hydrofed.auth import (
 )
 from hydrofed.comparisons import comparison_digest
 from hydrofed.jobs import GitHubTrainingLauncher, JobError, TrainingLauncher, make_launcher
+from hydrofed.messages import MessageError, MessageStore
 from hydrofed.operations import REVIEW_STATUSES, OperationsError, OperationsStore
 from hydrofed.storage import ExperimentStore
 
@@ -91,6 +94,11 @@ class AlertReview(BaseModel):
     note: str = ""
 
 
+class NewMessage(BaseModel):
+    body: str
+    alert_id: str | None = None
+
+
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
@@ -142,6 +150,7 @@ def create_app(
     users = UserStore(database_path)
     bootstrap_admin(users)
     operations = OperationsStore(database_path, feed_directory, **({"clock": clock} if clock else {}))
+    messages = MessageStore(database_path)
     training = launcher or make_launcher(database_path)
     key = secret_key(database_path)
 
@@ -349,6 +358,49 @@ def create_app(
     def review_alert(alert_id: str, review: AlertReview, user: dict = Depends(requires("review_alerts"))) -> dict:
         own_plant(user, alert_id.split(":", 1)[0])
         return {"alert": operations_call(operations.review_alert, alert_id, review.status, review.note, user)}
+
+    # --- messages between operators and administrators ---
+
+    def conversation_plant(user: dict, plant: str) -> str:
+        own_plant(user, plant)
+        if plant not in operations_call(operations.plant_ids):
+            raise HTTPException(404, f"Unknown plant: {plant}")
+        return plant
+
+    @app.get("/api/messages")
+    def message_threads(user: dict = Depends(requires("send_messages"))) -> dict:
+        plants = visible_plants(user, operations_call(operations.plant_ids))
+        threads = [
+            {**summary, "plant_name": operations.node(summary["plant"])["display_name"]}
+            for summary in messages.summaries(plants, user)
+        ]
+        return {"threads": threads, "unread": sum(thread["unread"] for thread in threads)}
+
+    @app.get("/api/messages/{plant}")
+    def message_thread(plant: str, user: dict = Depends(requires("send_messages"))) -> dict:
+        conversation_plant(user, plant)
+        return {
+            "plant": plant,
+            "plant_name": operations.node(plant)["display_name"],
+            "messages": messages.thread(plant, user),
+        }
+
+    @app.post("/api/messages/{plant}", status_code=201)
+    def send_message(plant: str, request: NewMessage, user: dict = Depends(requires("send_messages"))) -> dict:
+        conversation_plant(user, plant)
+        alert = None
+        if request.alert_id:
+            found = next(
+                (item for item in operations_call(operations.alerts, plant, 10_000) if item["id"] == request.alert_id),
+                None,
+            )
+            if found is None:
+                raise HTTPException(400, "That alert does not belong to this plant or has not happened yet.")
+            alert = {"id": found["id"], "severity": found["severity"], "started_at": found["started_at"]}
+        try:
+            return {"message": messages.post(plant, user, request.body, alert)}
+        except MessageError as error:
+            raise HTTPException(400, str(error)) from error
 
     # --- administration ---
 
