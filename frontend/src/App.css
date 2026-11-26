@@ -53,7 +53,7 @@
 
 .brand small {
   display: block;
-  color: #9fb3a6;
+  color: var(--green-300);
   font-size: 12px;
 }
 
@@ -68,7 +68,7 @@
 .nav-group p {
   margin: 0 0 4px;
   padding: 0 10px;
-  color: #8ea596;
+  color: var(--green-300);
   font-size: 12px;
 }
 
@@ -142,7 +142,7 @@
 }
 
 .sidebar-user small {
-  color: #9fb3a6;
+  color: var(--green-300);
   font-size: 12px;
 }
 
@@ -160,7 +160,7 @@
 }
 
 .sidebar .avatar {
-  background: var(--green-700);
+  background: var(--green-600);
   color: #fff;
 }
 
@@ -609,14 +609,14 @@ main {
 }
 
 .button-primary {
-  border-color: var(--green-800);
-  background: var(--green-700);
+  border-color: var(--green-700);
+  background: var(--green-600);
   color: #fff;
 }
 
 .button-primary:hover:not(:disabled) {
-  border-color: var(--green-900);
-  background: var(--green-800);
+  border-color: var(--green-800);
+  background: var(--green-700);
 }
 
 .button-ghost {
@@ -694,13 +694,13 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--green-700);
-  box-shadow: 0 0 0 1px var(--green-700);
+  border-color: var(--green-600);
+  box-shadow: 0 0 0 1px var(--green-600);
 }
 
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: var(--green-700);
+  accent-color: var(--green-600);
 }
 
 .checkbox {
@@ -754,7 +754,7 @@ input[type="radio"] {
 }
 
 .segmented button.active {
-  background: var(--green-800);
+  background: var(--green-600);
   color: #fff;
 }
 
@@ -782,7 +782,7 @@ input[type="radio"] {
 }
 
 .switch.on {
-  background: var(--green-700);
+  background: var(--green-600);
 }
 
 .switch.on span {
@@ -1983,7 +1983,7 @@ thead .cell-note {
 
 .login-hero p {
   margin: 0 0 32px;
-  color: #b7c7bc;
+  color: var(--green-200);
   font-size: 15.5px;
 }
 
@@ -2359,7 +2359,7 @@ thead .cell-note {
   min-width: 20px;
   padding: 0 5px;
   border-radius: var(--radius-sm);
-  background: var(--green-700);
+  background: var(--green-600);
   color: #fff;
   font-family: var(--font-mono);
   font-size: 11px;
