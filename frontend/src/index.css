@@ -1,16 +1,16 @@
 :root {
-  /* Greens: a muted forest scale. Brand and structure, never decoration. */
-  --green-950: #0f1f17;
-  --green-900: #14261c;
-  --green-800: #1c3a2a;
-  --green-700: #245038;
-  --green-600: #2c6446;
-  --green-500: #3d7d5a;
-  --green-400: #6b9e80;
-  --green-300: #a5c4b0;
-  --green-200: #cddfd3;
-  --green-100: #e3ece5;
-  --green-50: #f0f4f1;
+  /* Greens: the bright brand scale. Brand and structure, never decoration. */
+  --green-950: #04261a;
+  --green-900: #073523;
+  --green-800: #0c4a31;
+  --green-700: #0f5f3e;
+  --green-600: #16855a;
+  --green-500: #22a06b;
+  --green-400: #4cc38a;
+  --green-300: #8fdcb4;
+  --green-200: #c3eed6;
+  --green-100: #e2f6ea;
+  --green-50: #f2faf5;
 
   /* Surfaces and ink: warm greys, white panels, hairline rules. */
   --page: #f2f1ed;
@@ -21,7 +21,7 @@
   --ink-muted: #777c78;
   --border: #dad8d1;
   --border-strong: #b5b3aa;
-  --focus: #245038;
+  --focus: #16855a;
 
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
