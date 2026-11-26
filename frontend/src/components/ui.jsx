@@ -12,14 +12,9 @@ const toneIcons = {
   muted: 'info',
 }
 
-// Status is never colour alone: every badge carries an icon and a word.
-export function Badge({ tone = 'muted', icon, children, size = 'md' }) {
-  return (
-    <span className={`badge badge-${tone} badge-${size}`}>
-      <Icon name={icon || toneIcons[tone] || 'info'} size={size === 'sm' ? 12 : 14} strokeWidth={2.2} />
-      {children}
-    </span>
-  )
+// Status is never colour alone: every tag spells out its state in words.
+export function Badge({ tone = 'muted', children, size = 'md' }) {
+  return <span className={`badge badge-${tone} badge-${size}`}>{children}</span>
 }
 
 export function StatusBadge({ status, size }) {
@@ -34,8 +29,7 @@ export function SeverityBadge({ severity, size }) {
 
 export function ReviewBadge({ status, size }) {
   const info = reviewInfo[status] || reviewInfo.open
-  const icon = { open: 'alert', acknowledged: 'eye', investigating: 'clock', resolved: 'check', false_alarm: 'close' }[status]
-  return <Badge tone={info.tone} icon={icon} size={size}>{info.label}</Badge>
+  return <Badge tone={info.tone} size={size}>{info.label}</Badge>
 }
 
 export function Card({ title, subtitle, actions, children, className = '', padded = true, id }) {
@@ -55,13 +49,10 @@ export function Card({ title, subtitle, actions, children, className = '', padde
   )
 }
 
-export function StatTile({ label, value, detail, tone, icon }) {
+export function StatTile({ label, value, detail, tone }) {
   return (
     <article className={`stat-tile ${tone ? `stat-${tone}` : ''}`}>
-      <div className="stat-label">
-        {icon && <Icon name={icon} size={16} />}
-        <span>{label}</span>
-      </div>
+      <div className="stat-label">{label}</div>
       <strong>{value}</strong>
       {detail && <span className="stat-detail">{detail}</span>}
     </article>
@@ -115,7 +106,7 @@ export function Loading({ label = 'Loading…' }) {
 export function EmptyState({ icon = 'info', title, children, action }) {
   return (
     <div className="empty-state">
-      <span className="empty-icon"><Icon name={icon} size={22} /></span>
+      <Icon name={icon} size={20} className="empty-icon" />
       <strong>{title}</strong>
       {children && <p>{children}</p>}
       {action}

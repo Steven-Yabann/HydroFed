@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { Icon } from '../components/Icon'
 import { BarChart } from '../components/charts'
 import { Card, EmptyState, Loading, Notice, PageHeader, Segmented } from '../components/ui'
 import { useApi } from '../lib/hooks'
@@ -107,31 +106,24 @@ function Findings({ data, scoreKey }) {
   const isolatedModel = auc('isolated', 'model_only')
 
   return (
-    <div className="findings">
-      <article>
-        <span className="finding-icon"><Icon name="shield" size={18} /></span>
-        <div>
-          <strong>Federated training matches centralised training</strong>
-          <p>
-            On the full detector, FedAvg reaches a within-recording AUC of {number(fedFull, 3)} against {number(centralFull, 3)} for
-            pooling every plant's data on one server, a gap of {number(Math.abs(fedFull - centralFull), 3)}, and no raw telemetry leaves a plant.
-          </p>
-        </div>
-      </article>
-      <article>
-        <span className="finding-icon finding-neutral"><Icon name="info" size={18} /></span>
-        <div>
-          <strong>It does not beat plants training alone on SKAB</strong>
-          <p>
-            Scored by the model alone, isolated plants reach {number(isolatedModel, 3)} against {number(fedModel, 3)} for FedAvg.
-            Each SKAB plant already has thousands of normal windows, and the per-recording baseline does most of the detecting.
-          </p>
-        </div>
-      </article>
+    <section className="findings" aria-labelledby="findings-title">
+      <h2 id="findings-title">What the results show</h2>
+      <div className="findings-body">
+        <p>
+          <strong>Federated training matches centralised training.</strong> On the full detector, FedAvg reaches a within-recording
+          AUC of {number(fedFull, 3)} against {number(centralFull, 3)} for pooling every plant's data on one server, a gap
+          of {number(Math.abs(fedFull - centralFull), 3)}, and no raw telemetry leaves a plant.
+        </p>
+        <p>
+          <strong>It does not beat plants training alone on SKAB.</strong> Scored by the model alone, isolated plants
+          reach {number(isolatedModel, 3)} against {number(fedModel, 3)} for FedAvg. Each SKAB plant already has thousands of
+          normal windows, and the per-recording baseline does most of the detecting.
+        </p>
+      </div>
       {scoreKey === 'model_only' && (
         <Notice tone="info">“Model only” scores use the autoencoder's reconstruction residuals, isolating what training contributes.</Notice>
       )}
-    </div>
+    </section>
   )
 }
 
@@ -271,9 +263,8 @@ export default function PerformancePage() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Research results · SKAB benchmark"
         title="Model performance"
-        description="How federated learning compares with centralised and isolated training, and which model family detects faults best."
+        description="Results on the SKAB benchmark: how federated learning compares with centralised and isolated training, and which model family detects faults best."
       />
 
       <div className="sticky-controls">
@@ -305,7 +296,6 @@ export default function PerformancePage() {
           {data.regimes && <RegimesSection data={data} scoreKey={scoreKey} />}
           {data.models && <ModelsSection data={data} scoreKey={scoreKey} />}
           <p className="data-source">
-            <Icon name="database" size={14} />
             {percent(0.54, 0)} of held-out test windows are anomalous, so an always-on alarm would score F1 ≈ 0.70.
             Within-recording AUC is the primary measure because it does not depend on a threshold.
           </p>

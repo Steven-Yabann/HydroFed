@@ -79,12 +79,11 @@ export function MicrosoftMark() {
 }
 
 export function HydroFedMark({ size = 32 }) {
+  // A drop above a water line: drawn in the surrounding text colour.
   return (
-    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
-      <rect width="40" height="40" rx="10" fill="#0f5132" />
-      <path d="M8 25c3 0 3-3 6-3s3 3 6 3 3-3 6-3 3 3 6 3" stroke="#6ee7b7" strokeWidth="2.4" fill="none" strokeLinecap="round" />
-      <path d="M8 30c3 0 3-3 6-3s3 3 6 3 3-3 6-3 3 3 6 3" stroke="#a7f3d0" strokeWidth="2.4" fill="none" strokeLinecap="round" opacity="0.7" />
-      <path d="M20 8c-3 4.5-5 7.3-5 9.6a5 5 0 0 0 10 0C25 15.3 23 12.5 20 8Z" fill="#d1fae5" />
+    <svg className="brand-mark" width={size} height={size} viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M16 3.5c-4 5.6-6.5 9-6.5 12a6.5 6.5 0 0 0 13 0c0-3-2.5-6.4-6.5-12Z" strokeLinejoin="round" />
+      <path d="M3 27h26" strokeLinecap="square" />
     </svg>
   )
 }

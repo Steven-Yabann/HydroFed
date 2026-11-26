@@ -86,7 +86,6 @@ export default function NodesPage() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Administration"
         title="Plant nodes"
         description="Each node is a plant that keeps its telemetry on site and trains locally. Pause a node to leave it out of the next federated run, for example during maintenance or a network outage."
       />
@@ -131,14 +130,14 @@ export default function NodesPage() {
                       {node.last_round ? (
                         <>
                           Round {node.last_round}
-                          <span className="cell-note">{relative(node.last_round_at)}{node.last_loss !== undefined && node.last_loss !== null ? ` · loss ${number(node.last_loss, 4)}` : ''}</span>
+                          <span className="cell-note">{relative(node.last_round_at)}{node.last_loss !== undefined && node.last_loss !== null ? `, loss ${number(node.last_loss, 4)}` : ''}</span>
                         </>
                       ) : <span className="muted">Never</span>}
                     </td>
                     <td>
                       <div className="switch-cell">
                         <Switch checked={node.participates} onChange={() => toggle(node)} label={`${node.display_name} participates in training`} />
-                        <Badge size="sm" tone={node.participates ? 'normal' : 'muted'} icon={node.participates ? 'check' : 'stop'}>
+                        <Badge size="sm" tone={node.participates ? 'normal' : 'muted'}>
                           {node.participates ? 'Participating' : 'Paused'}
                         </Badge>
                       </div>

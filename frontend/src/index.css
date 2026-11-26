@@ -1,29 +1,32 @@
 :root {
-  /* Layered greens: brand and structure. */
-  --green-950: #04261a;
-  --green-900: #073523;
-  --green-800: #0c4a31;
-  --green-700: #0f5f3e;
-  --green-600: #16855a;
-  --green-500: #22a06b;
-  --green-400: #4cc38a;
-  --green-300: #8fdcb4;
-  --green-200: #c3eed6;
-  --green-100: #e2f6ea;
-  --green-50: #f2faf5;
+  /* Greens: a muted forest scale. Brand and structure, never decoration. */
+  --green-950: #0f1f17;
+  --green-900: #14261c;
+  --green-800: #1c3a2a;
+  --green-700: #245038;
+  --green-600: #2c6446;
+  --green-500: #3d7d5a;
+  --green-400: #6b9e80;
+  --green-300: #a5c4b0;
+  --green-200: #cddfd3;
+  --green-100: #e3ece5;
+  --green-50: #f0f4f1;
 
-  /* Surfaces and ink. White first; green only as tint and accent. */
-  --page: #f6f9f7;
+  /* Surfaces and ink: warm greys, white panels, hairline rules. */
+  --page: #f2f1ed;
   --surface: #ffffff;
-  --surface-sunken: #f2f6f3;
-  --ink: #0f1f17;
-  --ink-secondary: #4a5a52;
-  --ink-muted: #7b8a82;
-  --border: #e1e9e4;
-  --border-strong: #c9d6ce;
-  --focus: #16855a;
+  --surface-sunken: #ebeae5;
+  --ink: #171a18;
+  --ink-secondary: #4a4f4b;
+  --ink-muted: #777c78;
+  --border: #dad8d1;
+  --border-strong: #b5b3aa;
+  --focus: #245038;
 
-  /* Status (reserved; always shown with an icon and a word). */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Status (reserved; always shown with a word, never colour alone). */
   --good: #0ca30c;
   --warning: #fab219;
   --serious: #ec835a;
@@ -49,14 +52,14 @@
   --series-5: #e87ba4;
   --series-other: #9aa59f;
 
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 16px;
-  --shadow-sm: 0 1px 2px rgba(7, 53, 35, 0.06);
-  --shadow: 0 1px 2px rgba(7, 53, 35, 0.05), 0 4px 16px rgba(7, 53, 35, 0.06);
-  --shadow-lg: 0 12px 40px rgba(7, 53, 35, 0.18);
+  --radius-sm: 2px;
+  --radius: 3px;
+  --radius-lg: 3px;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.12);
 
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   color: var(--ink);
   background: var(--page);
   font-synthesis: none;
@@ -92,6 +95,7 @@ textarea {
 
 a {
   color: var(--green-700);
+  text-underline-offset: 2px;
 }
 
 h1,
@@ -99,15 +103,20 @@ h2,
 h3 {
   margin: 0;
   line-height: 1.25;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+code,
+time,
+.mono {
+  font-family: var(--font-mono);
 }
 
 code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.92em;
+  font-size: 0.9em;
   background: var(--surface-sunken);
-  padding: 1px 5px;
-  border-radius: 4px;
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
 }
 
 :focus-visible {

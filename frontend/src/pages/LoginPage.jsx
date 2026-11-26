@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { GoogleMark, HydroFedMark, Icon, MicrosoftMark } from '../components/Icon'
+import { GoogleMark, HydroFedMark, MicrosoftMark } from '../components/Icon'
 import { Notice } from '../components/ui'
 import { api, oauthStartUrl } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -47,27 +47,21 @@ export default function LoginPage() {
   return (
     <div className="login">
       <section className="login-hero" aria-hidden="true">
-        <div className="login-waves">
-          <span />
-          <span />
-          <span />
-          <span />
-        </div>
         <div className="login-hero-content">
           <div className="login-brand">
             <HydroFedMark size={44} />
             <span>HydroFed</span>
           </div>
-          <h2>Early warning for every turbine in the fleet.</h2>
+          <h2>Early warning for hydropower plants.</h2>
           <p>
             Each plant trains on its own telemetry and shares only model weights.
             Operators see anomalies as they develop, without raw sensor data ever leaving the site.
           </p>
-          <ul>
-            <li><Icon name="signal" size={18} /> Live anomaly scores for every plant</li>
-            <li><Icon name="alert" size={18} /> Prioritised alerts with review tracking</li>
-            <li><Icon name="shield" size={18} /> Raw telemetry stays at the plant</li>
-          </ul>
+          <dl>
+            <div><dt>Scores</dt><dd>Every plant is scored against its own normal behaviour.</dd></div>
+            <div><dt>Alerts</dt><dd>Ranked by severity, with a review trail for each one.</dd></div>
+            <div><dt>Data</dt><dd>Raw telemetry stays at the plant. Only model weights travel.</dd></div>
+          </dl>
         </div>
       </section>
 
@@ -120,7 +114,6 @@ export default function LoginPage() {
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
           <p className="login-foot">
-            <Icon name="lock" size={14} />
             Access is by invitation. New accounts are added by a system administrator.
           </p>
         </form>

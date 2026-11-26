@@ -13,8 +13,8 @@ const REFRESH_MS = 5000
 export function LiveIndicator({ time }) {
   return (
     <span className="live">
-      <span className="live-dot" aria-hidden="true" />
-      Live replay · {clock(time)}
+      <span className="live-mark" aria-hidden="true" />
+      Replay clock <time>{clock(time)}</time>
     </span>
   )
 }
@@ -26,7 +26,7 @@ function PlantCard({ plant, sensors }) {
       <header>
         <div>
           <h3>{plant.name}</h3>
-          <span>{plant.location || `Node ${plant.id}`}{plant.capacity_mw ? ` · ${plant.capacity_mw} MW` : ''}</span>
+          <span>{plant.location || `Node ${plant.id}`}{plant.capacity_mw ? `, ${plant.capacity_mw} MW` : ''}</span>
         </div>
         <StatusBadge status={plant.status} />
       </header>
@@ -77,12 +77,12 @@ export function AlertRow({ alert, onOpen, showPlant = true }) {
             {alert.ongoing && <span className="pill pill-live">Ongoing</span>}
           </span>
           <span className="alert-meta">
-            {faultTypes[alert.fault_type] || alert.fault_type} pattern · largest change in {alert.sensor_label || alert.sensor}
+            {faultTypes[alert.fault_type] || alert.fault_type} pattern, largest change in {alert.sensor_label || alert.sensor}
           </span>
         </span>
         <span className="alert-side">
           <ReviewBadge status={alert.status} size="sm" />
-          <span className="alert-time">{relative(alert.started_at)} · {duration(alert.duration_seconds)}</span>
+          <span className="alert-time">{relative(alert.started_at)}, lasted {duration(alert.duration_seconds)}</span>
         </span>
       </button>
     </li>
@@ -122,10 +122,10 @@ export default function FleetPage() {
       {fleet.error && <Notice tone="warning" title="Connection interrupted">{fleet.error} Showing the last readings received.</Notice>}
 
       <div className="stat-grid">
-        <StatTile icon="octagon" label="Plants in alarm" value={counts.alarm || 0} tone={counts.alarm ? 'critical' : undefined} detail={`of ${plants.length} plants`} />
-        <StatTile icon="eye" label="On watch" value={counts.watch || 0} tone={counts.watch ? 'watch' : undefined} detail="above half the threshold" />
-        <StatTile icon="checkCircle" label="Normal" value={counts.normal || 0} detail="within normal behaviour" />
-        <StatTile icon="alert" label="Unreviewed alerts" value={unreviewed.length} tone={unreviewed.length ? 'serious' : undefined} detail={`${critical} critical in the open queue`} />
+        <StatTile label="Plants in alarm" value={counts.alarm || 0} tone={counts.alarm ? 'critical' : undefined} detail={`of ${plants.length} plants`} />
+        <StatTile label="On watch" value={counts.watch || 0} tone={counts.watch ? 'watch' : undefined} detail="above half the threshold" />
+        <StatTile label="Normal" value={counts.normal || 0} detail="within normal behaviour" />
+        <StatTile label="Unreviewed alerts" value={unreviewed.length} tone={unreviewed.length ? 'serious' : undefined} detail={`${critical} critical in the open queue`} />
       </div>
 
       <div className="fleet-layout">
@@ -157,7 +157,6 @@ export default function FleetPage() {
       </div>
 
       <p className="data-source">
-        <Icon name="database" size={14} />
         Readings replay the {source.dataset} test-rig recordings at one second per second, scored by the federated LSTM autoencoder
         with the frozen alert policy (threshold {source.threshold_mad} MAD above each recording's baseline).
       </p>

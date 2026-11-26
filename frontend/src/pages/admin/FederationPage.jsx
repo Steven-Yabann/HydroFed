@@ -109,7 +109,7 @@ function TrainingPanel({ training, participating, config, onChange }) {
     <Card
       title="Run federated training"
       subtitle={backend.subtitle}
-      actions={job && <Badge tone={jobTones[job.state] || 'info'} icon={running ? 'clock' : undefined}>{job.state}</Badge>}
+      actions={job && <Badge tone={jobTones[job.state] || 'info'}>{job.state}</Badge>}
     >
       {!training?.available && <Notice tone="warning" title="Training is unavailable here">{training?.reason}</Notice>}
       {error && <Notice tone="critical">{error}</Notice>}
@@ -131,8 +131,8 @@ function TrainingPanel({ training, participating, config, onChange }) {
       {job && (
         <div className="job">
           <p className="muted small">
-            Started {dateTime(job.started_at)} by {job.started_by} · plants {job.clients.join(', ')}
-            {job.url && <> · <a href={job.url} target="_blank" rel="noreferrer">View the run on GitHub</a></>}
+            Started {dateTime(job.started_at)} by {job.started_by} with plants {job.clients.join(', ')}.
+            {job.url && <> <a href={job.url} target="_blank" rel="noreferrer">View the run on GitHub</a></>}
           </p>
           {job.state === 'queued' && !job.url && <p className="muted small">Waiting for GitHub to start the run…</p>}
           {job.error && <Notice tone="critical">{job.error}</Notice>}
@@ -227,7 +227,6 @@ export default function FederationPage() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Administration"
         title="Federated training"
         description="Configure how plants train the shared anomaly detector, then start a run. Plants share model weights only; raw telemetry stays on site."
       />
@@ -297,7 +296,7 @@ export default function FederationPage() {
                   <tr key={run.run_id}>
                     <td>{dateTime(run.started_at)}</td>
                     <td>
-                      <Badge size="sm" tone={run.status === 'completed' ? 'normal' : run.status === 'failed' ? 'critical' : 'info'} icon={run.status === 'running' ? 'clock' : undefined}>
+                      <Badge size="sm" tone={run.status === 'completed' ? 'normal' : run.status === 'failed' ? 'critical' : 'info'}>
                         {run.status}
                       </Badge>
                     </td>
@@ -314,7 +313,6 @@ export default function FederationPage() {
       </Card>
 
       <p className="data-source">
-        <Icon name="info" size={14} />
         Runs use the SKAB-aligned evaluation: per-plant scaling, the hybrid score and normal-only training windows.
       </p>
     </div>

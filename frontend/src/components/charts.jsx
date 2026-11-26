@@ -168,7 +168,7 @@ export function TimeSeriesChart({
                 <line className="chart-threshold" y1={geometry.y(threshold)} y2={geometry.y(threshold)} x2={plotWidth} />
                 {!compact && (
                   <text className="chart-threshold-label" x={plotWidth - 4} y={geometry.y(threshold) - 6} textAnchor="end">
-                    {thresholdLabel} · {formatTick(threshold)}
+                    {thresholdLabel} ({formatTick(threshold)})
                   </text>
                 )}
               </g>
@@ -298,7 +298,7 @@ export function BarChart({ rows, domain, format = (value) => value.toFixed(3), r
                 <g key={row.id} onMouseEnter={() => setHover(index)} onMouseLeave={() => setHover(null)}>
                   <rect className="chart-hit" x={-labelWidth} y={index * rowHeight} width={labelWidth + plotWidth} height={rowHeight} />
                   <text className="chart-row-label" x={-12} y={top + 9} dy="0.32em" textAnchor="end">{row.label}</text>
-                  <rect x={0} y={top} width={barWidth} height={16} rx={4} className={`chart-bar ${hover === index ? 'hover' : ''}`} style={{ fill: row.color }} />
+                  <rect x={0} y={top} width={barWidth} height={16} rx={1} className={`chart-bar ${hover === index ? 'hover' : ''}`} style={{ fill: row.color }} />
                   {row.sd > 0 && (
                     <g className="chart-error">
                       <line x1={x(Math.max(min, row.value - row.sd))} x2={x(row.value + row.sd)} y1={top + 8} y2={top + 8} />
