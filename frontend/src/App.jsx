@@ -99,11 +99,6 @@ function Sidebar({ route, open, onClose, onAccount }) {
     <>
       {open && <button type="button" className="sidebar-scrim" aria-label="Close menu" onClick={onClose} />}
       <aside className={`sidebar ${open ? 'open' : ''}`} aria-label="Main navigation">
-        <div className="sidebar-layers" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
         <a className="brand" href={`#${homePath(user)}`} onClick={onClose}>
           <HydroFedMark size={36} />
           <span>
@@ -145,6 +140,7 @@ function Sidebar({ route, open, onClose, onAccount }) {
             )
           })}
         </nav>
+        <p className="advisory">Advisory only. HydroFed does not control plant equipment.</p>
         <button type="button" className="sidebar-user" onClick={onAccount}>
           <span className="avatar">{initials(user.name)}</span>
           <span>
@@ -180,10 +176,6 @@ function Shell({ route }) {
         <header className="topbar">
           <Button variant="ghost" icon="menu" className="menu-button" onClick={() => setMenuOpen(true)} aria-label="Open menu" />
           <a className="topbar-brand" href={`#${homePath(user)}`}><HydroFedMark size={28} /> HydroFed</a>
-          <span className="advisory">
-            <Icon name="shield" size={14} />
-            Advisory monitoring · does not control plant equipment
-          </span>
         </header>
         <main id="main" tabIndex={-1}>
           {!page ? <Loading /> : can(page.permission) && (!page.allowed || page.allowed(route.segments, user))

@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { Icon } from '../components/Icon'
 import {
   Button, Card, Drawer, EmptyState, Field, Loading, Notice, PageHeader, ReviewBadge, Segmented, SeverityBadge,
 } from '../components/ui'
@@ -49,7 +48,7 @@ function ReviewDrawer({ alert, sensorLabels, onClose, onSaved }) {
     <Drawer
       open={Boolean(alert)}
       onClose={onClose}
-      title={`${severityInfo[alert.severity].label} alert · ${alert.plant_name}`}
+      title={`${severityInfo[alert.severity].label} alert at ${alert.plant_name}`}
       subtitle={`Started ${dateTime(alert.started_at)}`}
       footer={(
         <>
@@ -196,7 +195,7 @@ export default function AlertsPage() {
                   <th scope="col">Severity</th>
                   <th scope="col">Plant</th>
                   <th scope="col">Started</th>
-                  <th scope="col">Duration</th>
+                  <th scope="col" className="numeric">Duration</th>
                   <th scope="col">Largest change</th>
                   <th scope="col">Status</th>
                   <th scope="col"><span className="sr-only">Action</span></th>
@@ -231,7 +230,6 @@ export default function AlertsPage() {
       </Card>
 
       <p className="data-source">
-        <Icon name="info" size={14} />
         Severity follows the peak score: medium above the threshold, high above twice it, critical above four times it.
       </p>
 

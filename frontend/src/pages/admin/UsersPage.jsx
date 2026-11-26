@@ -38,7 +38,7 @@ function RolePicker({ roles, value, onChange }) {
           <input type="radio" name="role" value={role.id} checked={value === role.id} onChange={() => onChange(role.id)} />
           <span>
             <strong>{role.label}</strong>
-            <small>{role.permissions.map((permission) => permissionLabels[permission] || permission).join(' · ')}</small>
+            <small>{role.permissions.map((permission) => permissionLabels[permission] || permission).join(', ')}</small>
           </span>
         </label>
       ))}
@@ -215,7 +215,6 @@ export default function UsersPage() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Administration"
         title="Users & access"
         description="Only people added here can sign in, whether with a password or with Google or Microsoft. Roles decide what each person can see and change."
         actions={<Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add user</Button>}
@@ -262,11 +261,11 @@ export default function UsersPage() {
                     <td>
                       {seesAllPlants(roles, user.role) ? <span className="muted">All plants</span>
                         : user.plant_id ? plantName(user.plant_id)
-                          : <Badge size="sm" tone="warning" icon="alert">Not assigned</Badge>}
+                          : <Badge size="sm" tone="warning">Not assigned</Badge>}
                     </td>
                     <td>{user.has_password ? 'Password or SSO' : 'Single sign-on'}</td>
                     <td>
-                      <Badge size="sm" tone={user.status === 'active' ? 'normal' : 'muted'} icon={user.status === 'active' ? 'check' : 'lock'}>
+                      <Badge size="sm" tone={user.status === 'active' ? 'normal' : 'muted'}>
                         {user.status === 'active' ? 'Active' : 'Disabled'}
                       </Badge>
                     </td>

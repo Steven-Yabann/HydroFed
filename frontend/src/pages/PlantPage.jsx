@@ -59,20 +59,20 @@ export default function PlantPage({ plantId }) {
       <PageHeader
         eyebrow={<LiveIndicator time={current.updated_at} />}
         title={current.name}
-        description={[current.location, current.capacity_mw ? `${current.capacity_mw} MW` : null, `Node ${current.id}`].filter(Boolean).join(' · ')}
+        description={[current.location, current.capacity_mw ? `${current.capacity_mw} MW` : null, `Node ${current.id}`].filter(Boolean).join(', ')}
         actions={<StatusBadge status={current.status} size="lg" />}
       />
 
       <div className="stat-grid">
         <article className={`stat-tile stat-score stat-${plantStatus[current.status]?.tone}`}>
-          <div className="stat-label"><Icon name="signal" size={16} /><span>Anomaly score now</span></div>
+          <div className="stat-label">Anomaly score now</div>
           <strong>{number(current.score, 1)}</strong>
           <ScoreMeter score={current.score} threshold={current.threshold} />
-          <span className="stat-detail">Threshold {number(current.threshold, 0)} · {plantStatus[current.status]?.description}</span>
+          <span className="stat-detail">Threshold {number(current.threshold, 0)}. {plantStatus[current.status]?.description}.</span>
         </article>
-        <StatTile icon="alert" label="Open alerts" value={current.open_alerts} tone={current.open_alerts ? 'serious' : undefined} detail="awaiting review or in progress" />
-        <StatTile icon="clock" label={`Alert time, last ${windows.find((item) => item.id === windowSeconds)?.label}`} value={duration(alertsInView)} detail={data ? `${Math.round((alertsInView / data.score.length) * 100)}% of the window` : ''} />
-        <StatTile icon="wave" label="Replaying recording" value={current.recording} detail={faultTypes[current.recording.split('/')[0]] || 'SKAB test rig'} />
+        <StatTile label="Open alerts" value={current.open_alerts} tone={current.open_alerts ? 'serious' : undefined} detail="awaiting review or in progress" />
+        <StatTile label={`Alert time, last ${windows.find((item) => item.id === windowSeconds)?.label}`} value={duration(alertsInView)} detail={data ? `${Math.round((alertsInView / data.score.length) * 100)}% of the window` : ''} />
+        <StatTile label="Replaying recording" value={current.recording} detail={faultTypes[current.recording.split('/')[0]] || 'SKAB test rig'} />
       </div>
 
       <Card
